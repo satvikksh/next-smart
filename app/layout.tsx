@@ -1,6 +1,7 @@
 import "./globals.css";
 import Header from "./components/header";
 import { ReactNode } from "react";
+import Footer from "./components/footer";
 
 export const metadata = {
   title: "S.M.A.R.T.",
@@ -30,11 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </main>
 
         {/* Footer */}
-        <footer className="text-center mt-16 py-6 text-sm text-slate-400 border-t border-slate-700">
-          <p>
-            © {new Date().getFullYear()} <span className="text-blue-400 font-semibold">S.M.A.R.T.</span> — All Rights Reserved.
-          </p>
-        </footer>
+           <Footer />
       </body>
     </html>
   );
