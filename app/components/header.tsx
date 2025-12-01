@@ -1,13 +1,12 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
-import dynamic from 'next/dynamic';
+// import { useState } from 'react';
+// import dynamic from 'next/dynamic';
 
 // Lazy load the popup to avoid SSR issues
-const Login = dynamic(() => import('../login/page'), { ssr: false });
 
 export default function Header() {
-  const [showLogin, setShowLogin] = useState(false);
+  // const [showLogin, setShowLogin] = useState(false);
 
   return (
     <header className="bg-slate-900/80 backdrop-blur-lg sticky top-0 z-40">
@@ -45,11 +44,7 @@ export default function Header() {
         </div>
       </nav>
 
-      {/* Popup */}
-      {showLogin && (
-       <Login open={showLogin} onClose={() => setShowLogin(false)} />
-
-      )}
+    
     </header>
   );
 }
