@@ -1,57 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
 
 @layer base {
   html {
     scroll-behavior: smooth;
   }
-  
+
   body {
-    @apply bg-white text-gray-900 font-body;
+    /* Only default Tailwind utilities + normal CSS */
+    @apply bg-gray-600 text-gray-900;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 
 @layer components {
   .gradient-text {
-    @apply bg-gradient-to-r from-primary-600 to-secondary-500 bg-clip-text text-transparent;
+    /* gradient using default colors */
+    @apply bg-gradient-to-r from-emerald-500 to-amber-400 bg-clip-text text-transparent;
   }
-  
+
   .hero-gradient {
     background: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #f97316 100%);
     background-size: 200% 200%;
     animation: gradient 8s ease infinite;
   }
-  
+
   .card-hover {
     @apply transition-all duration-300 hover:shadow-lg hover:scale-105;
   }
-  
+
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-accent font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105;
+    @apply bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105;
   }
-  
+
   .btn-secondary {
-    @apply bg-secondary-500 hover:bg-secondary-600 text-white font-accent font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105;
+    @apply bg-slate-900 hover:bg-slate-950 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 hover:shadow-lg hover:scale-105;
   }
-  
+
   .input-field {
-    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-300;
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-300;
   }
-  
+
   .map-container {
     @apply w-full h-96 rounded-lg overflow-hidden shadow-lg;
   }
 }
 
 @layer utilities {
-  .container {
-    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
-  }
-  
   .section-padding {
     @apply py-16 lg:py-24;
+  }
+
+  /* If you want your own container class separate from Tailwind's built-in .container */
+  .app-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
 }

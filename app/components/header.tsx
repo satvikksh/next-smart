@@ -4,7 +4,7 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 
 // Lazy load the popup to avoid SSR issues
-const LoginPopup = dynamic(() => import('../login/page'), { ssr: false });
+const Login = dynamic(() => import('../login/page'), { ssr: false });
 
 export default function Header() {
   const [showLogin, setShowLogin] = useState(false);
@@ -28,12 +28,12 @@ export default function Header() {
         {/* LOGIN & SIGNUP BUTTONS */}
         <div className="flex items-center space-x-3">
           {/* Login Button → Opens Popup */}
-          <button
-            onClick={() => setShowLogin(true)}
+          <Link
+            href="/login"
             className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
           >
             Login
-          </button>
+          </Link>
 
           {/* Signup Page Link */}
           <Link
@@ -47,7 +47,8 @@ export default function Header() {
 
       {/* Popup */}
       {showLogin && (
-        <LoginPopup open={showLogin} onClose={() => setShowLogin(false)} />
+       <Login open={showLogin} onClose={() => setShowLogin(false)} />
+
       )}
     </header>
   );
