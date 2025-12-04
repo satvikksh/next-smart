@@ -3,6 +3,7 @@ import Session from "../models/session";
 import { dbConnect } from "./ConnectDB";
 import { jwtVerify } from "jose";
 
+
 const getCookieSecret = () => new TextEncoder().encode(process.env.COOKIE_SECRET || "");
 
 export function generateSid(): string {

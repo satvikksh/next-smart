@@ -77,7 +77,7 @@ UserSchema.pre("validate", function (next) {
     doc.username = doc.username.trim().toLowerCase();
   if (typeof doc.email === "string")
     doc.email = doc.email.trim().toLowerCase();
-  next();
+  // next();
 });
 
 /** 5) Model (safe with Next.js HMR) */
