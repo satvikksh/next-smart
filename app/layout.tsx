@@ -5,7 +5,7 @@ import Footer from "./components/footer";
 
 export const metadata = {
   title: "S.M.A.R.T.",
-  description: "Smart Monitoring and Response System for Tourist",
+  description: "Smart Monitoring and Response System for Tourist"
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
