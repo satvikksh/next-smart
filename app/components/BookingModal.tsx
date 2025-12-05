@@ -90,7 +90,7 @@ export default function BookingModal({
               <div>
                 <h4 className="font-bold text-lg">{guide.name}</h4>
                 <p className="text-gray-600">{guide.location}, {guide.country}</p>
-                <p className="text-blue-600 font-semibold">${guide.pricePerDay}/day</p>
+                <p className="text-blue-600 font-semibold">₹{guide.pricePerDay}/day</p>
               </div>
             </div>
           </div>

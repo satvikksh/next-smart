@@ -31,7 +31,7 @@ export default function GuideCard({ guide, onBook }: GuideCardProps) {
             <p className="text-gray-600">{guide.experience} years experience</p>
           </div>
           <span className="text-2xl font-bold text-blue-600">
-            ${guide.pricePerDay}<span className="text-sm text-gray-500">/day</span>
+            ₹{guide.pricePerDay}<span className="text-sm text-gray-500">/day</span>
           </span>
         </div>
 
