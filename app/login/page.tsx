@@ -1,245 +1,240 @@
+// app/login/page.tsx - Updated with Action Handling
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Eye, EyeOff, Mail, Lock, AlertCircle, Check } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft, UserPlus } from 'lucide-react';
+import { useUser } from '../context/UserContext';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<any>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { login, isLoggedIn } = useUser();
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  // Get return URL and action from query params
+  const returnUrl = searchParams.get('returnUrl') || '/';
+  const action = searchParams.get('action');
+  const guideId = searchParams.get('guideId');
+
+  // Check for pending actions in localStorage
+  useEffect(() => {
+    const storedAction = localStorage.getItem('pending_action');
+    if (storedAction) {
+      setPendingAction(JSON.parse(storedAction));
+    }
+  }, []);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isLoggedIn) {
+      handlePostLoginRedirect();
+    }
+  }, [isLoggedIn]);
+
+  const handlePostLoginRedirect = () => {
+    // Clear pending action
+    localStorage.removeItem('pending_action');
+    
+    // Handle specific actions
+    if (action === 'book_guide' && guideId) {
+      // Redirect to booking page with guide ID
+      router.push(`/find-guide?book=${guideId}`);
+    } else if (pendingAction?.action === 'book_guide') {
+      // Redirect to find-guide page
+      router.push('/find-guide');
+    } else {
+      // Redirect to return URL
+      router.push(returnUrl);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    // TODO: replace with your real /api/auth/login call
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    setError('');
+    setIsLoading(true);
 
     try {
-      if (email && password.length >= 6) {
-        router.push('/dashboard');
+      const result = await login(email, password);
+      if (result.success) {
+        // Login successful, redirect will happen in useEffect
       } else {
-        throw new Error('Invalid email or password');
+        setError(result.message || 'Invalid email or password. Please try again.');
       }
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Something went wrong. Please try again.');
-      }
+    } catch (err) {
+      setError('Something went wrong. Please try again.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-8">
-      {/* subtle background glow */}
-      <div className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-32 -left-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-gray-50 to-purple-50 py-12">
+      <div className="max-w-md w-full mx-4">
+        {/* Back Button */}
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
 
-      <div className="relative z-10 w-full max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        {/* Left panel - brand / info (like register page) */}
-        <section className="hidden md:flex flex-col justify-center gap-4 rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-lg">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-slate-900/70 px-3 py-1 text-[11px] font-medium text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            S.M.A.R.T. • Smart Monitoring & Response for Tourist
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Link href="/" className="inline-flex items-center space-x-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
+              <span className="text-white font-bold text-xl">G</span>
+            </div>
+            <div className="text-left">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                GuideConnect
+              </h1>
+              <p className="text-sm text-gray-500">Welcome back</p>
+            </div>
+          </Link>
+        </div>
+
+        {/* Pending Action Banner */}
+        {pendingAction && (
+          <div className="mb-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <UserPlus className="w-4 h-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="font-medium text-blue-800">Complete your booking</p>
+                <p className="text-sm text-blue-600">
+                  Login to book {pendingAction.guideName || 'your selected guide'}
+                </p>
+              </div>
+            </div>
           </div>
+        )}
 
-          <h1 className="text-3xl font-bold text-slate-50 tracking-tight">
-            Welcome back to <span className="text-emerald-400">S.M.A.R.T.</span>
-          </h1>
+        {/* Action Required Banner */}
+        {action === 'book_guide' && !pendingAction && (
+          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="font-medium text-amber-800">Login Required</p>
+                <p className="text-sm text-amber-600">
+                  You need to login to book guides on GuideConnect
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
-          <p className="text-sm text-slate-400 max-w-md">
-            Sign in to manage your trips, view your digital tourist IDs, and connect with your
-            trusted guides across India.
-          </p>
+        {/* Form */}
+        <div className="bg-white rounded-2xl shadow-xl p-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Sign in to your account</h2>
+          
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-3">
+              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          )}
 
-          <ul className="mt-2 space-y-2 text-xs text-slate-300">
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Continue existing bookings and view all your guide confirmations in one place.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Access your secure digital tourist IDs for every S.M.A.R.T. journey.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Stay notified with real-time updates from guides and safety alerts.
-            </li>
-          </ul>
-
-          <p className="mt-4 text-xs text-slate-500">
-            New here?{' '}
-            <Link
-              href="/register"
-              className="text-emerald-400 hover:text-emerald-300 font-semibold"
-            >
-              Create an account
-            </Link>{' '}
-            in a few seconds.
-          </p>
-        </section>
-
-        {/* Right panel - actual login form */}
-        <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
-          <header className="mb-6 text-center md:text-left">
-            <h2 className="text-2xl font-semibold text-slate-50">Sign in</h2>
-            <p className="mt-1 text-xs text-slate-400">
-              Use your registered email and password to log in.
-            </p>
-          </header>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email */}
-            <div className="space-y-1">
-              <label className="block text-xs font-medium text-slate-300">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Email address
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Mail className="h-4 w-4 text-slate-500" />
-                </span>
+                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type="email"
+                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 pl-9 pr-9 py-2.5 text-sm text-slate-100 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
                   placeholder="you@example.com"
                 />
-                {email && (
-                  <span className="absolute inset-y-0 right-0 flex items-center pr-3">
-                    <Check className="h-4 w-4 text-emerald-400" />
-                  </span>
-                )}
               </div>
             </div>
 
-            {/* Password */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-medium text-slate-300">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">
                   Password
                 </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-[11px] text-emerald-400 hover:text-emerald-300"
-                >
+                <Link href="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                  <Lock className="h-4 w-4 text-slate-500" />
-                </span>
+                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 pl-9 pr-9 py-2.5 text-sm text-slate-100 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full pl-12 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
                   placeholder="••••••••"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-300"
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
-            {/* Error message */}
-            {error && (
-              <div className="flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2">
-                <AlertCircle className="h-4 w-4 text-red-400 mt-0.5" />
-                <p className="text-xs text-red-200">{error}</p>
-              </div>
-            )}
-
-            {/* Remember + submit */}
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
-                />
-                <span>Keep me signed in</span>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="remember"
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="remember" className="ml-2 text-sm text-gray-700">
+                Remember me
               </label>
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="mt-1 w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60 transition"
+              disabled={isLoading}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3.5 rounded-xl font-semibold hover:shadow-lg transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 pt-1">
-              <div className="h-px flex-1 bg-slate-800" />
-              <span className="text-[11px] text-slate-500">or</span>
-              <div className="h-px flex-1 bg-slate-800" />
-            </div>
-
-            {/* Social login (optional) */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { name: 'Google', label: 'G' },
-                { name: 'GitHub', label: 'GH' },
-                { name: 'X', label: 'X' },
-              ].map((p) => (
-                <button
-                  key={p.name}
-                  type="button"
-                  className="flex items-center justify-center rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-2 text-xs font-medium text-slate-200 hover:border-emerald-400 hover:text-emerald-300 transition"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Register link */}
-            <p className="pt-1 text-center text-xs text-slate-400">
-              Don&apos;t have an account?{' '}
-              <Link
-                href="/register"
-                className="font-semibold text-emerald-400 hover:text-emerald-300"
-              >
-                Create one
-              </Link>
-            </p>
           </form>
 
-          <p className="mt-4 text-[11px] text-center text-slate-500">
-            By signing in, you agree to our{' '}
-            <Link href="/terms" className="underline hover:text-slate-300">
-              Terms
-            </Link>{' '}
-            and{' '}
-            <Link href="/privacy" className="underline hover:text-slate-300">
-              Privacy Policy
-            </Link>
-            .
-          </p>
-        </section>
+          <div className="mt-8 pt-8 border-t border-gray-200">
+            <p className="text-center text-gray-600">
+              Don't have an account?{' '}
+              <Link 
+                href={`/register?returnUrl=${encodeURIComponent(returnUrl)}${action ? `&action=${action}` : ''}`}
+                className="text-blue-600 hover:text-blue-800 font-semibold"
+              >
+                Sign up for free
+              </Link>
+            </p>
+          </div>
+
+          {/* Continue without login (limited access) */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-center text-sm text-gray-500">
+              Or{' '}
+              <Link href="/find-guide" className="text-gray-700 hover:text-gray-900 font-medium">
+                continue browsing guides
+              </Link>
+              {' '}without booking
+            </p>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

@@ -1,6 +1,9 @@
-// components/GuideCard.tsx
-import { MapPin, Star, Users, Globe, CheckCircle } from 'lucide-react';
+// components/GuideCard.tsx - Updated with Auth Check
+import { MapPin, Star, Users, Globe, CheckCircle, Lock } from 'lucide-react';
 import { Guide } from '../types/guide';
+import { useUser } from '../context/UserContext';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface GuideCardProps {
   guide: Guide;
@@ -8,8 +11,46 @@ interface GuideCardProps {
 }
 
 export default function GuideCard({ guide, onBook }: GuideCardProps) {
+  const { isLoggedIn, requireAuth } = useUser();
+  const router = useRouter();
+  const [showLoginTooltip, setShowLoginTooltip] = useState(false);
+
+  const handleBookClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    if (!isLoggedIn) {
+      // Show login tooltip
+      setShowLoginTooltip(true);
+      setTimeout(() => setShowLoginTooltip(false), 3000);
+      
+      // Store guide info for after login
+      const pendingAction = {
+        action: 'book_guide',
+        guideId: guide.id,
+        guideName: guide.name,
+      };
+      localStorage.setItem('pending_action', JSON.stringify(pendingAction));
+      
+      // Redirect to login with return URL
+      const returnUrl = window.location.pathname;
+      router.push(`/login?returnUrl=${encodeURIComponent(returnUrl)}&action=book_guide&guideId=${guide.id}`);
+      return;
+    }
+    
+    onBook();
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+    <div className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow relative">
+      {/* Login Tooltip */}
+      {showLoginTooltip && (
+        <div className="absolute top-4 right-4 z-10">
+          <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3 py-2 rounded-lg text-sm font-medium animate-pulse">
+            Please login to book
+          </div>
+        </div>
+      )}
+
       {/* Guide Image */}
       <div className="relative h-48 bg-gradient-to-r from-blue-400 to-purple-500">
         <img
@@ -31,7 +72,7 @@ export default function GuideCard({ guide, onBook }: GuideCardProps) {
             <p className="text-gray-600">{guide.experience} years experience</p>
           </div>
           <span className="text-2xl font-bold text-blue-600">
-            ₹{guide.pricePerDay}<span className="text-sm text-gray-500">/day</span>
+            ${guide.pricePerDay}<span className="text-sm text-gray-500">/day</span>
           </span>
         </div>
 
@@ -71,13 +112,25 @@ export default function GuideCard({ guide, onBook }: GuideCardProps) {
           </span>
         </div>
 
-        {/* Book Button */}
+        {/* Book Button with Auth Check */}
         <button
-          onClick={onBook}
-          className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+          onClick={handleBookClick}
+          className={`w-full py-3 rounded-lg transition-colors font-semibold flex items-center justify-center gap-2 ${
+            isLoggedIn
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
         >
-          Book This Guide
+          {!isLoggedIn && <Lock className="w-4 h-4" />}
+          {isLoggedIn ? 'Book This Guide' : 'Login to Book'}
         </button>
+        
+        {/* Login Prompt */}
+        {!isLoggedIn && (
+          <p className="text-center text-xs text-gray-500 mt-3">
+            Login required to book guides
+          </p>
+        )}
       </div>
     </div>
   );
