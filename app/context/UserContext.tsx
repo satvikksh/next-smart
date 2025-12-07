@@ -1,224 +1,123 @@
-// context/UserContext.tsx - Updated Version
+// app/context/UserContext.tsx
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  phone?: string;
-  avatar?: string;
-  role: 'traveler' | 'guide' | 'admin';
-  verified: boolean;
-  createdAt: string;
-}
+type User = {
+  _id?: string;
+  name?: string;
+  username?: string;
+  email?: string;
+  role?: string;
+  // add other public user fields you expect
+} | null;
 
-interface UserContextType {
-  user: User | null;
+type LoginResult = { success: true } | { success: false; message?: string };
+
+type UserContextValue = {
+  user: User;
+  loading: boolean;
   isLoggedIn: boolean;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
-  register: (userData: any) => Promise<{ success: boolean; message?: string }>;
-  logout: () => void;
-  updateUser: (userData: Partial<User>) => void;
-  requireAuth: (action: string, redirectPath?: string) => boolean;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+};
+
+const UserContext = createContext<UserContextValue | undefined>(undefined);
+
+export function useUser(): UserContextValue {
+  const ctx = useContext(UserContext);
+  if (!ctx) throw new Error('useUser must be used within a UserProvider');
+  return ctx;
 }
 
-const UserContext = createContext<UserContextType | undefined>(undefined);
+export function UserProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
-  const pathname = usePathname();
+  async function refresh() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/me', { method: 'GET', credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user ?? null);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      console.error('refresh user failed', err);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    // Check if user is logged in from localStorage
-    const loadUser = async () => {
-      setIsLoading(true);
-      try {
-        const savedUser = localStorage.getItem('guide_user');
-        const savedToken = localStorage.getItem('guide_token');
-        
-        if (savedUser && savedToken) {
-          // Validate token with backend (simulated)
-          const isValid = await validateToken(savedToken);
-          if (isValid) {
-            setUser(JSON.parse(savedUser));
-          } else {
-            // Token expired or invalid
-            localStorage.removeItem('guide_user');
-            localStorage.removeItem('guide_token');
-            localStorage.removeItem('guide_refresh_token');
-          }
-        }
-      } catch (error) {
-        console.error('Error loading user:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadUser();
+    // run once on mount
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Simulate token validation
-  const validateToken = async (token: string): Promise<boolean> => {
-    // In real app, this would be an API call
-    await new Promise(resolve => setTimeout(resolve, 100));
-    return true; // For demo, always return true
-  };
+async function login(
+  email: string,
+  password: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    // Prefer NEXT_PUBLIC_API_URL when set (production), else use relative path in dev
+    const basePublic = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? '') : '';
+    const url = basePublic
+      ? `${basePublic.replace(/\/$/, '')}/api/auth/login`
+      : '/api/auth/login';
 
-  const login = async (email: string, password: string) => {
-    try {
-      setIsLoading(true);
-      
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock validation
-      if (!email || !password) {
-        return { success: false, message: 'Please enter email and password' };
-      }
+    // debug: print URL to console so you can confirm what client is requesting
+    console.info('[login] POST ->', url);
 
-      // Mock user data
-      const mockUser = {
-        id: 'user-' + Date.now(),
-        name: email.split('@')[0],
-        email: email,
-        phone: '+1 (555) 123-4567',
-        role: 'traveler' as const,
-        verified: true,
-        createdAt: new Date().toISOString(),
-      };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, password }),
+    });
 
-      // Mock token
-      const token = 'mock_jwt_token_' + Date.now();
-      const refreshToken = 'mock_refresh_token_' + Date.now();
+    // debug: log status and url
+    console.info('[login] response status', res.status, res.statusText);
 
-      setUser(mockUser);
-      localStorage.setItem('guide_user', JSON.stringify(mockUser));
-      localStorage.setItem('guide_token', token);
-      localStorage.setItem('guide_refresh_token', refreshToken);
+    // try to parse JSON safely
+    const data = await res.json().catch(() => ({} as any));
 
+    if (res.ok) {
+      await refresh(); // refresh user data
       return { success: true };
-    } catch (error) {
-      return { success: false, message: 'Login failed. Please try again.' };
-    } finally {
-      setIsLoading(false);
     }
-  };
 
-  const register = async (userData: any) => {
-    try {
-      setIsLoading(true);
-      
-      // Mock API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const newUser = {
-        id: `user-${Date.now()}`,
-        name: userData.name,
-        email: userData.email,
-        phone: userData.phone || '',
-        role: 'traveler' as const,
-        verified: false,
-        createdAt: new Date().toISOString(),
-      };
-
-      const token = 'mock_jwt_token_' + Date.now();
-      const refreshToken = 'mock_refresh_token_' + Date.now();
-
-      setUser(newUser);
-      localStorage.setItem('guide_user', JSON.stringify(newUser));
-      localStorage.setItem('guide_token', token);
-      localStorage.setItem('guide_refresh_token', refreshToken);
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, message: 'Registration failed. Please try again.' };
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('guide_user');
-    localStorage.removeItem('guide_token');
-    localStorage.removeItem('guide_refresh_token');
-    localStorage.removeItem('user_bookings');
-    router.push('/');
-  };
-
-  const updateUser = (userData: Partial<User>) => {
-    if (user) {
-      const updatedUser = { ...user, ...userData };
-      setUser(updatedUser);
-      localStorage.setItem('guide_user', JSON.stringify(updatedUser));
-    }
-  };
-
-  // Function to check if user is authenticated for specific actions
-  const requireAuth = (action: string, redirectPath?: string): boolean => {
-    if (!user) {
-      // Store the intended action and path for after login
-      const returnUrl = redirectPath || pathname;
-      const actionData = { action, data: {} };
-      
-      localStorage.setItem('pending_action', JSON.stringify(actionData));
-      localStorage.setItem('return_url', returnUrl);
-      
-      // Redirect to login
-      router.push(`/login?returnUrl=${encodeURIComponent(returnUrl)}&action=${encodeURIComponent(action)}`);
-      return false;
-    }
-    return true;
-  };
-
-  // Check for pending actions on login
-  useEffect(() => {
-    if (user && pathname === '/login') {
-      const pendingAction = localStorage.getItem('pending_action');
-      const returnUrl = localStorage.getItem('return_url');
-      
-      if (pendingAction) {
-        const actionData = JSON.parse(pendingAction);
-        
-        // Clear pending action
-        localStorage.removeItem('pending_action');
-        localStorage.removeItem('return_url');
-        
-        // Redirect to return URL or handle action
-        if (returnUrl) {
-          router.push(returnUrl);
-        }
-      }
-    }
-  }, [user, pathname, router]);
-
-  return (
-    <UserContext.Provider value={{
-      user,
-      isLoggedIn: !!user,
-      isLoading,
-      login,
-      register,
-      logout,
-      updateUser,
-      requireAuth
-    }}>
-      {children}
-    </UserContext.Provider>
-  );
+    return { success: false, message: data?.message || data?.error || `HTTP ${res.status}` };
+  } catch (err: any) {
+    console.error('[login] network/error', err);
+    return { success: false, message: err?.message || 'Network error' };
+  }
 }
 
-export function useUser() {
-  const context = useContext(UserContext);
-  if (context === undefined) {
-    throw new Error('useUser must be used within a UserProvider');
+
+
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+    } catch (err) {
+      console.error('logout error', err);
+    } finally {
+      setUser(null);
+    }
   }
-  return context;
+
+  const value: UserContextValue = {
+    user,
+    loading,
+    isLoggedIn: !!user,
+    login,
+    logout,
+    refresh,
+  };
+
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }

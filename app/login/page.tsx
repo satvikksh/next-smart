@@ -1,10 +1,19 @@
-// app/login/page.tsx - Updated with Action Handling
+// app/login/page.tsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft, UserPlus } from 'lucide-react';
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  ArrowLeft,
+  UserPlus,
+  Check,
+} from 'lucide-react';
 import { useUser } from '../context/UserContext';
 
 export default function LoginPage() {
@@ -19,38 +28,30 @@ export default function LoginPage() {
   const { login, isLoggedIn } = useUser();
 
   // Get return URL and action from query params
-  const returnUrl = searchParams.get('returnUrl') || '/';
-  const action = searchParams.get('action');
-  const guideId = searchParams.get('guideId');
+  const returnUrl = searchParams?.get('returnUrl') || '/';
+  const action = searchParams?.get('action');
+  const guideId = searchParams?.get('guideId');
 
-  // Check for pending actions in localStorage
   useEffect(() => {
-    const storedAction = localStorage.getItem('pending_action');
-    if (storedAction) {
-      setPendingAction(JSON.parse(storedAction));
-    }
+    const storedAction = typeof window !== 'undefined' ? localStorage.getItem('pending_action') : null;
+    if (storedAction) setPendingAction(JSON.parse(storedAction));
   }, []);
 
-  // Redirect if already logged in
   useEffect(() => {
     if (isLoggedIn) {
       handlePostLoginRedirect();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
 
   const handlePostLoginRedirect = () => {
-    // Clear pending action
     localStorage.removeItem('pending_action');
-    
-    // Handle specific actions
+
     if (action === 'book_guide' && guideId) {
-      // Redirect to booking page with guide ID
       router.push(`/find-guide?book=${guideId}`);
     } else if (pendingAction?.action === 'book_guide') {
-      // Redirect to find-guide page
       router.push('/find-guide');
     } else {
-      // Redirect to return URL
       router.push(returnUrl);
     }
   };
@@ -62,9 +63,7 @@ export default function LoginPage() {
 
     try {
       const result = await login(email, password);
-      if (result.success) {
-        // Login successful, redirect will happen in useEffect
-      } else {
+      if (!result.success) {
         setError(result.message || 'Invalid email or password. Please try again.');
       }
     } catch (err) {
@@ -75,166 +74,218 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-gray-50 to-purple-50 py-12">
-      <div className="max-w-md w-full mx-4">
-        {/* Back Button */}
-        <button
-          onClick={() => router.back()}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-8"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </button>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#021017] via-[#071722] to-[#042027] py-16 relative overflow-hidden">
+      {/* Decorative glow shapes */}
+      <div className="pointer-events-none absolute -left-56 -top-40 w-[520px] h-[520px] rounded-full bg-gradient-to-tr from-[#002b2b]/30 to-transparent blur-3xl animate-blob" />
+      <div className="pointer-events-none absolute -right-56 -bottom-40 w-[520px] h-[520px] rounded-full bg-gradient-to-bl from-[#00323a]/20 to-transparent blur-3xl animate-blob animation-delay-2000" />
 
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-xl">G</span>
-            </div>
-            <div className="text-left">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                GuideConnect
+      <div className="relative w-full max-w-6xl mx-auto px-6">
+        {/* Card */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[rgba(6,10,12,0.65)] border border-[rgba(255,255,255,0.03)] shadow-[0_20px_60px_rgba(2,8,12,0.7)] rounded-2xl overflow-hidden backdrop-blur-md">
+          {/* LEFT HERO */}
+          <div className="p-10 lg:p-16 bg-[linear-gradient(90deg,rgba(7,21,28,0.55),rgba(2,12,15,0.2))]">
+            <div className="max-w-lg">
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs bg-gradient-to-r from-emerald-500/10 to-cyan-400/10 text-emerald-300 border border-emerald-500/10 mb-6">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                NEW HERE? LET'S GET STARTED
+              </span>
+
+              <h1 className="text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4">
+                Create your account <span className="text-emerald-400">in seconds</span>
               </h1>
-              <p className="text-sm text-gray-500">Welcome back</p>
-            </div>
-          </Link>
-        </div>
 
-        {/* Pending Action Banner */}
-        {pendingAction && (
-          <div className="mb-6 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <UserPlus className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <p className="font-medium text-blue-800">Complete your booking</p>
-                <p className="text-sm text-blue-600">
-                  Login to book {pendingAction.guideName || 'your selected guide'}
-                </p>
+              <p className="text-slate-300 mb-8">
+                Join the platform and unlock a smarter way to manage your journey.
+                Stay connected, secure and always in control.
+              </p>
+
+              <ul className="space-y-4 text-slate-300">
+                <li className="flex items-center gap-3">
+                  <span className="rounded-full bg-emerald-500/10 p-2 text-emerald-400">
+                    <Check className="w-4 h-4" />
+                  </span>
+                  <span>Instant access to your dashboard</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="rounded-full bg-emerald-500/10 p-2 text-emerald-400">
+                    <Check className="w-4 h-4" />
+                  </span>
+                  <span>Secure authentication & encrypted sessions</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="rounded-full bg-emerald-500/10 p-2 text-emerald-400">
+                    <Check className="w-4 h-4" />
+                  </span>
+                  <span>Personalized experience tailored to you</span>
+                </li>
+              </ul>
+
+              <div className="mt-10 text-sm text-slate-400 flex items-center justify-between">
+                <div>Powered by your next-gen platform</div>
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" /> Live · Secure · Always on
+                </div>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Action Required Banner */}
-        {action === 'book_guide' && !pendingAction && (
-          <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600" />
+          {/* RIGHT FORM */}
+          <div className="p-8 lg:p-12">
+            <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={() => router.back()}
+                className="inline-flex items-center gap-2 text-slate-300 hover:text-white"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </button>
+
+              <Link href="/" className="text-xs text-slate-400 hover:text-white">Back to home</Link>
+            </div>
+
+            {pendingAction && (
+              <div className="mb-6 bg-amber-900/10 border border-amber-700/10 rounded-lg p-3 text-amber-200">
+                <div className="flex items-center gap-3">
+                  <div className="bg-amber-800/30 rounded-full p-2">
+                    <UserPlus className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-amber-100">Complete your booking</div>
+                    <div className="text-xs text-amber-200">Login to book {pendingAction.guideName || 'your selected guide'}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {action === 'book_guide' && !pendingAction && (
+              <div className="mb-6 bg-amber-900/6 border border-amber-700/6 rounded-lg p-3 text-amber-200">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <div className="text-sm font-medium text-amber-100">Login Required</div>
+                    <div className="text-xs text-amber-200">You need to login to book guides on GuideConnect</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <h2 className="text-2xl text-white font-bold mb-4">Sign in to your account</h2>
+            <p className="text-sm text-slate-400 mb-6">Welcome back — please enter your details.</p>
+
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-800/10 text-red-200">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <div className="text-sm">{error}</div>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <p className="font-medium text-amber-800">Login Required</p>
-                <p className="text-sm text-amber-600">
-                  You need to login to book guides on GuideConnect
-                </p>
+                <label className="text-xs text-slate-300 mb-2 block">Email address</label>
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-slate-900/60 border border-slate-800 rounded-full placeholder:text-slate-500 text-slate-100 focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none"
+                    placeholder="you@example.com"
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* Form */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Sign in to your account</h2>
-          
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-3">
-              <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
-              <p className="text-red-700 text-sm">{error}</p>
-            </div>
-          )}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs text-slate-300">Password</label>
+                  <Link href="/forgot-password" className="text-xs text-emerald-300 hover:underline">Forgot?</Link>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-12 pr-12 py-3 bg-slate-900/60 border border-slate-800 rounded-full placeholder:text-slate-500 text-slate-100 focus:ring-2 focus:ring-emerald-400 focus:border-transparent outline-none"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-slate-300"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                  placeholder="you@example.com"
-                />
+                {/* fake strength bar */}
+                <div className="mt-2">
+                  <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div className="h-full bg-amber-400" style={{ width: `${Math.min(password.length * 8, 100)}%` }} />
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">Strength: <span className="text-amber-200">Good</span></div>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <Link href="/forgot-password" className="text-sm text-blue-600 hover:text-blue-800">
-                  Forgot password?
-                </Link>
+              <div className="flex items-center gap-3">
+                <input id="remember" type="checkbox" className="w-4 h-4 rounded border-slate-700 text-emerald-400 focus:ring-emerald-400" />
+                <label htmlFor="remember" className="text-sm text-slate-300">Remember me</label>
               </div>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3.5 rounded-full font-semibold text-slate-900 bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 hover:scale-[1.01] transition-transform"
+              >
+                {isLoading ? 'Signing in...' : 'Sign in'}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center text-slate-400">
+              <p className="text-sm">
+                Don't have an account?{' '}
+                <Link
+                  href={`/register?returnUrl=${encodeURIComponent(returnUrl ?? '/')}${action ? `&action=${action}` : ''}`}
+                  className="text-emerald-300 hover:underline font-medium"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  Sign up for free
+                </Link>
+              </p>
+            </div>
+
+            <div className="mt-6 border-t border-slate-800 pt-6">
+              <div className="text-center text-slate-400 text-xs mb-4">or continue with</div>
+              <div className="flex gap-3">
+                <button className="flex-1 py-2 rounded-full border border-slate-800 bg-slate-900/50 text-slate-200 hover:bg-slate-900/70 flex items-center justify-center gap-2">
+                  <span className="text-sm">G</span> Google
+                </button>
+                <button className="flex-1 py-2 rounded-full border border-slate-800 bg-slate-900/50 text-slate-200 hover:bg-slate-900/70 flex items-center justify-center gap-2">
+                  <span className="text-sm"></span> Apple
                 </button>
               </div>
             </div>
-
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="remember"
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="remember" className="ml-2 text-sm text-gray-700">
-                Remember me
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3.5 rounded-xl font-semibold hover:shadow-lg transition-shadow disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </form>
-
-          <div className="mt-8 pt-8 border-t border-gray-200">
-            <p className="text-center text-gray-600">
-              Don't have an account?{' '}
-              <Link 
-                href={`/register?returnUrl=${encodeURIComponent(returnUrl)}${action ? `&action=${action}` : ''}`}
-                className="text-blue-600 hover:text-blue-800 font-semibold"
-              >
-                Sign up for free
-              </Link>
-            </p>
           </div>
-
-          {/* Continue without login (limited access) */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-center text-sm text-gray-500">
-              Or{' '}
-              <Link href="/find-guide" className="text-gray-700 hover:text-gray-900 font-medium">
-                continue browsing guides
-              </Link>
-              {' '}without booking
-            </p>
-          </div>
-        </div>
+        </div> {/* end card */}
       </div>
+
+      {/* small inline styles for animation (optional) */}
+      <style jsx>{`
+        @keyframes blob {
+          0% { transform: translateY(0) scale(1); }
+          33% { transform: translateY(-10px) scale(1.05); }
+          66% { transform: translateY(8px) scale(0.98); }
+          100% { transform: translateY(0) scale(1); }
+        }
+        .animate-blob {
+          animation: blob 8s infinite ease-in-out;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+      `}</style>
     </div>
   );
 }

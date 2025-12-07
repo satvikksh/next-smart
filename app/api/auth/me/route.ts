@@ -1,12 +1,12 @@
 // app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { dbConnect } from "../../src/lib/ConnectDB";
-import User from "../../src/models/users";
+import { dbConnect } from "../../../src/lib/ConnectDB";
+import User from "../../../src/models/users";
 import {
   getSessionBySignedToken,
   destroySession,
-} from "../../src/lib/session";
+} from "../../../src/lib/session";
 
 export async function GET() {
   try {
