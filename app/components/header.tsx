@@ -1,12 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useUser } from '../context/UserContext'; // adjust path if needed
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const { user, isLoggedIn, refresh } = useUser();
 
   const isActive = (href: string) =>
     pathname === href || (href !== '/' && pathname?.startsWith(href));
@@ -16,6 +21,31 @@ export default function Header() {
   const navLinkInactive = 'text-slate-400';
   const navLinkActive =
     'text-emerald-400 border-b border-emerald-400 pb-1 md:pb-0';
+
+  const displayName = user?.name || user?.username || 'User';
+
+  async function handleLogout() {
+    try {
+      setLoggingOut(true);
+      // call API logout route (should clear server cookie). If you don't have one,
+      // create POST /api/auth/logout that clears cookie(s).
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => null);
+
+      // refresh client-side user state
+      try {
+        await refresh();
+      } catch {}
+      // redirect to home or login
+      router.push('/');
+    } catch (err) {
+      console.error('logout error', err);
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   return (
     <header className="bg-slate-950/80 backdrop-blur-lg sticky top-0 z-40 border-b border-slate-800">
@@ -73,20 +103,42 @@ export default function Header() {
           </Link>
         </div>
 
-        {/* Desktop Auth Buttons */}
+        {/* Desktop Auth Buttons or User Menu */}
         <div className="hidden md:flex items-center space-x-3">
-          <Link
-            href="/login"
-            className="text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
-          >
-            Login
-          </Link>
-          <Link
-            href="/register"
-            className="text-sm font-semibold rounded-lg bg-emerald-500 px-4 py-1.5 text-slate-950 shadow hover:bg-emerald-400"
-          >
-            Sign Up
-          </Link>
+          {!isLoggedIn ? (
+            <>
+              <Link
+                href="/login"
+                className="text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
+              >
+                Login
+              </Link>
+              <Link
+                href="/register"
+                className="text-sm font-semibold rounded-lg bg-emerald-500 px-4 py-1.5 text-slate-950 shadow hover:bg-emerald-400"
+              >
+                Sign Up
+              </Link>
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-300">Welcome,</span>
+              <Link
+                href="/profile"
+                className="text-sm font-medium text-emerald-300 hover:underline"
+              >
+                {displayName}
+              </Link>
+              <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="ml-2 text-sm rounded-lg border border-slate-700 px-3 py-1 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
+                aria-label="Logout"
+              >
+                {loggingOut ? 'Signing out...' : 'Logout'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Mobile Hamburger */}
@@ -166,22 +218,50 @@ export default function Header() {
               Contact
             </Link>
 
-            <div className="pt-2 flex gap-2">
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="flex-1 text-center text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
-              >
-                Login
-              </Link>
-              <Link
-                href="/register"
-                onClick={() => setOpen(false)}
-                className="flex-1 text-center text-sm font-semibold rounded-lg bg-emerald-500 px-4 py-1.5 text-slate-950 shadow hover:bg-emerald-400"
-              >
-                Sign Up
-              </Link>
-            </div>
+            {/* Mobile auth area */}
+            {!isLoggedIn ? (
+              <div className="pt-2 flex gap-2">
+                <Link
+                  href="/login"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 text-center text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
+                >
+                  Login
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setOpen(false)}
+                  className="flex-1 text-center text-sm font-semibold rounded-lg bg-emerald-500 px-4 py-1.5 text-slate-950 shadow hover:bg-emerald-400"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            ) : (
+              <div className="pt-2 space-y-2">
+                <div className="px-3 py-2 rounded-lg bg-slate-900/50">
+                  <div className="text-sm text-slate-300">Signed in as</div>
+                  <div className="font-medium text-emerald-300">{displayName}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Link
+                    href="/profile"
+                    onClick={() => setOpen(false)}
+                    className="flex-1 text-center rounded-lg border border-slate-700 px-4 py-2 text-slate-200 hover:border-emerald-400"
+                  >
+                    Profile
+                  </Link>
+                  <button
+                    onClick={() => {
+                      handleLogout();
+                      setOpen(false);
+                    }}
+                    className="flex-1 text-center rounded-lg border border-slate-700 px-4 py-2 text-slate-200 hover:border-emerald-400"
+                  >
+                    {loggingOut ? 'Signing out...' : 'Logout'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
