@@ -1,18 +1,16 @@
 // src/models/session.ts
-import mongoose from "mongoose";
+import mongoose, { Schema, Model } from "mongoose";
 
-const SessionSchema = new mongoose.Schema({
-  sid: { type: String, required: true, unique: true },
-  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // <-- ref
-  deviceKey: { type: String },
-  ua: { type: String },
-  ip: { type: String },
+const SessionSchema = new Schema({
+  sid: { type: String, required: true, unique: true, index: true },
+  user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  deviceKey: { type: String, default: null },
+  ua: { type: String, default: "" },
+  ip: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
-  expiresAt: { type: Date, required: true },
-  meta: { type: mongoose.Schema.Types.Mixed },
-});
+  expiresAt: { type: Date },
+  meta: { type: Schema.Types.Mixed, default: {} },
+}, { versionKey: false });
 
-SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
-const Session = mongoose.models.Session || mongoose.model("Session", SessionSchema);
+const Session = (mongoose.models.Session as Model<any>) || mongoose.model("Session", SessionSchema);
 export default Session;

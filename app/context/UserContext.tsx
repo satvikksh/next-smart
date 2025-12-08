@@ -99,16 +99,24 @@ async function login(
 }
 
 
+// in app/context/UserContext.tsx or similar
+async function logout() {
+  try {
+    // POST to logout route
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
 
-  async function logout() {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
-    } catch (err) {
-      console.error('logout error', err);
-    } finally {
-      setUser(null);
-    }
+    // refresh user state (this will call /api/auth/me and get null)
+    await refresh();
+
+    // optional: redirect to home or login
+    // router.push('/');
+  } catch (err) {
+    console.error("logout failed", err);
   }
+}
 
   const value: UserContextValue = {
     user,
