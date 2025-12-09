@@ -3,23 +3,21 @@ import type { NextRequest } from 'next/server';
 import fs from 'fs';
 
 /**
- * POST /api/auth/signup
+ * POST /api/auth/guide-signup
  *
- * Body expected:
- * {
- *   name, email, phone, password,
- *   aadhaar?, pan?, city?, state?, country?, languages?, specialty?, pricePerDay?, experienceYears?, bio?
- * }
+ * Accepts either raw password (password) OR a client-side SHA-256 passwordHash (passwordHash).
+ * Accepts either raw Aadhaar/PAN (aadhaar, pan) OR their client-side hashes (aadhaarHash, panHash).
  *
- * Behavior:
- * - Validates required fields
- * - Rejects if email or phone already exists
- * - Hashes password (bcryptjs) and stores `passwordHash` on the guide record
- * - Persists to MongoDB if MONGODB_URI provided; otherwise falls back to /tmp/guides.json
- * - Returns sanitized user (masked Aadhaar/PAN) and a simple dev token
+ * Server behavior (developer-friendly):
+ *  - Requires: name, email, phone, and either password or passwordHash.
+ *  - If raw password provided: bcrypt-hash it and store as passwordHash.
+ *  - If client-sent passwordHash provided: bcrypt-hash that value (double-hash) and store.
+ *  - Stores raw aadhaar/pan only if provided; alternatively stores aadhaarHash/panHash.
+ *  - Persists to MongoDB if MONGODB_URI provided; otherwise falls back to /tmp/guides.json
+ *  - Returns sanitized user (no raw aadhaar/pan, passwordHash removed) and a dev token
  *
- * Security: This is meant as a developer-friendly starter. In production you must secure storage,
- * use HTTPS, send email verification, and never expose sensitive fields.
+ * Security: This is a development starter. In production: use HTTPS, proper KMS/encryption for PII,
+ * store password hashes securely, set HttpOnly cookies, rate-limit and add email verification.
  */
 
 const FILE_STORE_PATH = '/tmp/guides.json';
@@ -70,11 +68,15 @@ function maskPan(p?: string) {
 
 function sanitizeForClient(g: any) {
   const copy = { ...g };
+  // only reveal masked values if raw values exist in the stored record
   if (copy.aadhaar) copy.aadhaarMasked = maskAadhaar(copy.aadhaar);
   if (copy.pan) copy.panMasked = maskPan(copy.pan);
+  // never return raw PII or password hashes
   delete copy.aadhaar;
   delete copy.pan;
   delete copy.passwordHash;
+  delete copy.aadhaarHash;
+  delete copy.panHash;
   delete copy._createdAt;
   delete copy.__v;
   return copy;
@@ -91,24 +93,34 @@ export async function POST(req: NextRequest) {
     const name = (body.name || '').toString().trim();
     const email = (body.email || '').toString().trim().toLowerCase();
     const phone = (body.phone || '').toString().trim();
-    const password = (body.password || '').toString();
+    const rawPassword = body.password ? String(body.password) : null;
+    const clientPasswordHash = body.passwordHash ? String(body.passwordHash) : null;
 
-    if (!name || !email || !phone || !password) {
-      return NextResponse.json({ ok: false, error: 'name, email, phone and password are required' }, { status: 400 });
+    // require name,email,phone and either password or passwordHash
+    if (!name || !email || !phone || (!rawPassword && !clientPasswordHash)) {
+      return NextResponse.json({ ok: false, error: 'name, email, phone and password (or passwordHash) are required' }, { status: 400 });
     }
 
-    // basic password rules for dev
-    if (password.length < 6) {
+    // basic password rules for dev: ensure at least one representation meets minimum
+    if (rawPassword && rawPassword.length < 6) {
       return NextResponse.json({ ok: false, error: 'password must be at least 6 characters' }, { status: 400 });
     }
+    if (!rawPassword && clientPasswordHash && clientPasswordHash.length < 8) {
+      // client hash should be long; this is a loose check
+      return NextResponse.json({ ok: false, error: 'passwordHash seems invalid' }, { status: 400 });
+    }
 
-    // prepare record
+    // prepare record — we will store either raw aadhaar/pan (if provided) OR hashes
     const record: any = {
       name,
       email,
       phone,
+      // raw aadhaar/pan will only be stored if client provided them explicitly
       aadhaar: body.aadhaar ? String(body.aadhaar).trim() : null,
       pan: body.pan ? String(body.pan).toUpperCase().trim() : null,
+      // hashes provided by client (if any)
+      aadhaarHash: body.aadhaarHash ? String(body.aadhaarHash) : null,
+      panHash: body.panHash ? String(body.panHash) : null,
       city: body.city ? String(body.city).trim() : '',
       state: body.state ? String(body.state).trim() : '',
       country: body.country ? String(body.country).trim() : 'India',
@@ -122,7 +134,7 @@ export async function POST(req: NextRequest) {
       _createdAt: new Date(),
     };
 
-    // check duplicates
+    // check duplicates by email/phone
     const mongo = await connectToMongo();
     if (mongo) {
       const client = await mongo;
@@ -136,18 +148,22 @@ export async function POST(req: NextRequest) {
       if (exists) return NextResponse.json({ ok: false, error: 'email_or_phone_already_registered' }, { status: 409 });
     }
 
-    // hash password using bcryptjs
-    let hash: string | null = null;
+    // derive server-side password hash (bcrypt) from either rawPassword or clientPasswordHash
+    let passwordHashToStore: string | null = null;
     try {
       const bcrypt = await import('bcryptjs');
-      const salt = await bcrypt.genSalt(10);
-      hash = await bcrypt.hash(password, salt);
+      if (rawPassword) {
+        passwordHashToStore = await bcrypt.hash(rawPassword, 10);
+      } else {
+        // double-hash: bcrypt(clientPasswordHash)
+        passwordHashToStore = await bcrypt.hash(clientPasswordHash as string, 10);
+      }
     } catch (err) {
-      console.warn('bcryptjs not available, storing unhashed passwordHash for dev only');
-      hash = `dev:${password}`;
+      console.warn('bcryptjs not available, storing unhashed marker for dev only');
+      passwordHashToStore = rawPassword ? `dev:${rawPassword}` : `dev:${clientPasswordHash}`;
     }
 
-    record.passwordHash = hash;
+    record.passwordHash = passwordHashToStore;
 
     // persist
     let inserted: any = null;
@@ -170,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, token, user }, { status: 201 });
   } catch (err: any) {
-    console.error('POST /api/auth/signup error', err);
+    console.error('POST /api/auth/guide-signup error', err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }

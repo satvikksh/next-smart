@@ -1,38 +1,14 @@
+// /app/api/auth/login/route.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import fs from 'fs';
+import crypto from 'crypto';
 
-/**
- * POST /api/auth/login
- *
- * Body: { identifier: string, password: string }
- * - identifier: email or phone
- * - password: plain string
- *
- * Behavior (dev-friendly):
- *  - Looks up a guide by email OR phone in MongoDB (if MONGODB_URI provided) under `guides` collection
- *    or falls back to a simple file-store: /tmp/guides.json
- *  - If a matching guide is found, performs a minimal password check:
- *      * If the guide record contains `passwordHash` (future), you should verify it server-side.
- *      * For now (because the sample signup stored no password), this route treats any provided
- *        password with length >= 4 as valid **if a guide exists**. This makes the dev flow work
- *        while you integrate a real auth system.
- *  - On success returns a JSON payload: { ok: true, token, user }
- *    where `user` is a sanitized guide object (Aadhaar/PAN masked and removed).
- *
- * Security notes:
- * - This is a development-friendly route. For production: store password hashes, use HTTPS,
- *   issue HttpOnly cookies or secure JWTs, rate-limit login attempts and implement account lockout.
- */
-
-const FILE_STORE_PATH = '/tmp/guides.json';
-
-async function readFileStore(): Promise<any[]> {
+// Import bcrypt or fallback to dev behavior if not available (as before)
+async function readFileStore(path = '/tmp/guides.json') {
   try {
-    if (!fs.existsSync(FILE_STORE_PATH)) {
-      await fs.promises.writeFile(FILE_STORE_PATH, JSON.stringify([]), 'utf8');
-    }
-    const raw = await fs.promises.readFile(FILE_STORE_PATH, 'utf8');
+    if (!fs.existsSync(path)) await fs.promises.writeFile(path, JSON.stringify([]), 'utf8');
+    const raw = await fs.promises.readFile(path, 'utf8');
     return JSON.parse(raw || '[]');
   } catch (err) {
     console.error('readFileStore error', err);
@@ -52,6 +28,10 @@ async function connectToMongo() {
   return globalWithMongo._mongoClientPromise as Promise<any>;
 }
 
+// IMPORTANT: adjust this import path if your file is located elsewhere
+import guideSessionLib from '../../../src/lib/guide-session'; // createSession, verifySessionToken...
+// If that path does not match, use relative path like: '../../src/lib/guide-session'
+
 function maskAadhaar(a?: string) {
   if (!a) return undefined;
   return '********' + String(a).slice(-4);
@@ -62,23 +42,18 @@ function maskPan(p?: string) {
   if (s.length <= 4) return '****';
   return s.slice(0, 2) + '***' + s.slice(-1);
 }
-
 function sanitizeForClient(g: any) {
   const copy = { ...g };
   if (copy.aadhaar) copy.aadhaarMasked = maskAadhaar(copy.aadhaar);
   if (copy.pan) copy.panMasked = maskPan(copy.pan);
   delete copy.aadhaar;
   delete copy.pan;
-  // remove internal fields
+  delete copy.passwordHash;
   delete copy._createdAt;
   delete copy.__v;
+  delete copy.aadhaarHash;
+  delete copy.panHash;
   return copy;
-}
-
-function makeToken(payload: { id: string; email?: string }) {
-  // Simple token for dev: base64(id + ts + random). Not secure for production
-  const raw = `${payload.id}|${Date.now()}|${Math.random().toString(36).slice(2, 8)}`;
-  return Buffer.from(raw).toString('base64');
 }
 
 export async function POST(req: NextRequest) {
@@ -88,17 +63,17 @@ export async function POST(req: NextRequest) {
     const password = (body.password || '').toString();
 
     if (!identifier || !password) {
-      return NextResponse.json({ ok: false, error: 'identifier and password are required' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'identifier and password required' }, { status: 400 });
     }
 
-    // find guide
+    // find user (Mongo if configured, otherwise file store)
     let found: any = null;
     const mongo = await connectToMongo();
     if (mongo) {
       const client = await mongo;
       const db = client.db();
       const col = db.collection('guides');
-      // try to match by email or phone (case-insensitive for email)
+      // try to match by email or phone
       found = await col.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
     } else {
       const items = await readFileStore();
@@ -109,25 +84,89 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'User not found' }, { status: 404 });
     }
 
-    // AUTH CHECK (dev-friendly)
-    // If you later store passwordHash on the guide, verify it here. For now, accept any length>=4
-    if ((found.passwordHash && typeof found.passwordHash === 'string')) {
-      // TODO: verify hash (bcrypt) — not implemented in this dev route
-      // return 501 to indicate missing implementation
-      return NextResponse.json({ ok: false, error: 'Server not configured for password verification' }, { status: 501 });
+    // verify password using bcrypt (or dev marker)
+    let passwordOk = false;
+try {
+  const bcrypt = await import('bcryptjs');
+
+  // 1) direct bcrypt compare with raw password (normal)
+  if (found.passwordHash) {
+    passwordOk = await bcrypt.compare(password, found.passwordHash);
+  }
+
+  // 2) try double-hash scenario: server stored bcrypt(clientSHA256(password))
+  if (!passwordOk) {
+    try {
+      const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+      passwordOk = await bcrypt.compare(sha256, found.passwordHash);
+    } catch (innerErr) {
+      // ignore - keep trying other checks
+    }
+  }
+
+  // 3) dev marker fallback: stored values like "dev:plain" (in earlier dev flows)
+  if (!passwordOk && found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
+    const marker = String(found.passwordHash).slice(4);
+    // marker might be raw password used at signup, or client-side sha
+    if (password === marker) passwordOk = true;
+    else {
+      // compare sha too
+      const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+      if (sha256 === marker) passwordOk = true;
+    }
+  }
+} catch (err) {
+  // bcrypt import failed — try dev-marker only
+  console.warn('bcrypt unavailable, trying dev marker match');
+  if (found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
+    if (found.passwordHash === `dev:${password}`) passwordOk = true;
+    const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+    if (found.passwordHash === `dev:${sha256}`) passwordOk = true;
+  }
+}
+
+if (!passwordOk) {
+  return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
+}
+
+    // create session record in DB using guide-session helper
+    // This will return { token, refreshToken, expiresAt, sessionId }
+    let sessionInfo;
+    try {
+      // ensure the lib connects to DB internally (it does)
+      sessionInfo = await guideSessionLib.createSession(found._id || found.id || found._doc?._id, {
+        ttlDays: 7,
+        ip: req.headers.get('x-forwarded-for') || req.ip || '',
+        userAgent: req.headers.get('user-agent') || '',
+      });
+    } catch (err) {
+      console.error('createSession error', err);
+      // fallback: create a simple token if session creation fails (still allow login but warn)
+      sessionInfo = { token: `mock-${Date.now().toString(36)}`, expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
     }
 
-    if (password.length < 4) {
-      return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
-    }
+    // prepare cookie
+    const cookieName = 'guide_session';
+    const token = sessionInfo.token;
+    const maxAge = 7 * 24 * 60 * 60; // seconds
+    const isSecure = process.env.NODE_ENV === 'production';
+    const sameSite = 'Strict';
+    const path = '/';
 
-    // success — create token and return sanitized user
+    // set cookie flags (HttpOnly, SameSite=strict, Secure conditional)
+    let cookie = `${cookieName}=${token}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}`;
+    if (isSecure) cookie += '; Secure';
+
+    // sanitize user object to avoid returning PII
     const user = sanitizeForClient(found);
-    const token = makeToken({ id: found.id || found._id?.toString() || 'anon' });
 
-    // Optionally set cookie (not HttpOnly here) — for dev we return token in JSON
-    const resp = NextResponse.json({ ok: true, token, user }, { status: 200 });
-    return resp;
+    // Return response with cookie header set
+    const res = NextResponse.json({ ok: true, user }, {
+      status: 200,
+      headers: { 'Set-Cookie': cookie }
+    });
+
+    return res;
   } catch (err: any) {
     console.error('POST /api/auth/login error', err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

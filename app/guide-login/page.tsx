@@ -9,13 +9,14 @@ import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
  * Guide Login UI — Dark themed, two-column layout
  * - Place as /app/guide-login/page.tsx
  * - Requires Tailwind CSS
- * - Uses localStorage safely (wrapped with window checks)
- * - Replace handleAuth with real API call in production
+ * - Uses localStorage/sessionStorage safely (wrapped with window checks)
+ * - Calls POST /api/auth/login to authenticate; supports HttpOnly cookie or token responses
  */
 
 export default function GuideLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // after successful login we redirect to returnUrl (default to find-guide)
   const returnUrl = (searchParams?.get('returnUrl') as string) || '/find-guide';
 
   const [emailOrPhone, setEmailOrPhone] = useState('');
@@ -26,10 +27,10 @@ export default function GuideLoginPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    // safe localStorage read
+    // safe localStorage/sessionStorage read
     try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const t = window.localStorage.getItem('auth_token');
+      if (typeof window !== 'undefined') {
+        const t = window.localStorage.getItem('auth_token') || window.sessionStorage.getItem('auth_token');
         if (t) router.push(returnUrl);
       }
     } catch (e) {
@@ -44,9 +45,9 @@ export default function GuideLoginPage() {
     if (/[A-Z]/.test(pw)) score++;
     if (/[0-9]/.test(pw)) score++;
     if (/[^A-Za-z0-9]/.test(pw)) score++;
-    return { 
-      text: score <= 1 ? 'Weak' : score === 2 ? 'Fair' : score === 3 ? 'Good' : 'Strong', 
-      score 
+    return {
+      text: score <= 1 ? 'Weak' : score === 2 ? 'Fair' : score === 3 ? 'Good' : 'Strong',
+      score,
     };
   }
 
@@ -54,28 +55,78 @@ export default function GuideLoginPage() {
     e.preventDefault();
     setMessage(null);
     if (!emailOrPhone.trim() || !password) {
-      setMessage('Please enter credentials');
+      setMessage('Please enter your email/phone and password');
       return;
     }
     setLoading(true);
+
     try {
-      // TODO: replace with real API call POST /api/auth/login
-      await new Promise((r) => setTimeout(r, 700));
+      // call real api - include credentials to allow HttpOnly cookie responses
+      const res = await fetch('/api/auth/guide-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // important if server sets HttpOnly cookie
+        body: JSON.stringify({ identifier: emailOrPhone.trim(), password }),
+      });
 
-      // mock success
-      const token = 'mock-token-xyz';
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem('auth_token', token);
-          window.localStorage.setItem('auth_user', JSON.stringify({ email: emailOrPhone }));
+      // attempt to parse JSON; server may set cookie and return minimal body
+      let json: any = null;
+      try { json = await res.json(); } catch (_) { json = null; }
+
+      if (!res.ok) {
+        // try to show server-provided message or fallback
+        const err = json?.error || json?.message || `Login failed (status ${res.status})`;
+        setMessage(String(err));
+        setLoading(false);
+        return;
+      }
+
+      // success path: server may return either { ok:true, token, user } or { ok:true, user } and set cookie
+      if (json && json.ok) {
+        const { token, user } = json;
+        // if server returned a token, persist it; otherwise assume cookie auth is set
+        try {
+          if (typeof window !== 'undefined') {
+            if (token) {
+              if (remember && window.localStorage) {
+                window.localStorage.setItem('auth_token', token);
+                if (user) window.localStorage.setItem('auth_user', JSON.stringify(user));
+              } else if (window.sessionStorage) {
+                window.sessionStorage.setItem('auth_token', token);
+                if (user) window.sessionStorage.setItem('auth_user', JSON.stringify(user));
+              }
+            } else {
+              // no token returned -> assume server issued HttpOnly cookie. Optionally store user data if present.
+              if (remember && window.localStorage && user) window.localStorage.setItem('auth_user', JSON.stringify(user));
+              else if (window.sessionStorage && user) window.sessionStorage.setItem('auth_user', JSON.stringify(user));
+            }
+          }
+        } catch (err) {
+          console.warn('storage error', err);
         }
-      } catch (err) {}
 
-      // redirect preserving query (e.g., book action)
-      const params = typeof window !== 'undefined' ? window.location.search : '';
-      router.push(returnUrl + params);
-    } catch (err) {
-      setMessage('Login failed. Try again.');
+        // redirect preserving query (e.g., book action)
+        const params = typeof window !== 'undefined' ? window.location.search : '';
+        router.push(returnUrl + params);
+        return;
+      }
+
+      // fallback success when no json but 2xx response (cookie-only flows)
+      if (!json && res.ok) {
+        try {
+          if (typeof window !== 'undefined') {
+            // nothing to store if server manages sessions via HttpOnly cookie
+          }
+        } catch (err) {}
+        const params = typeof window !== 'undefined' ? window.location.search : '';
+        router.push(returnUrl + params);
+        return;
+      }
+
+      setMessage('Login failed — unexpected server response');
+    } catch (err: any) {
+      console.error('login error', err);
+      setMessage('Login failed. Check your network and try again.');
     } finally {
       setLoading(false);
     }
@@ -87,39 +138,39 @@ export default function GuideLoginPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#031018] to-[#071425] flex items-center justify-center p-6">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-       {/* LEFT HERO (Guide-focused copy) */}
-<div className="hidden lg:flex flex-col justify-center rounded-2xl bg-gradient-to-br from-[#081825]/60 to-transparent p-12 border border-white/6 shadow-xl overflow-hidden">
-  <div className="max-w-lg">
-    <span className="inline-block px-3 py-1 rounded-full bg-emerald-900/40 text-emerald-300 text-xs font-medium">NEW HERE? WELCOME GUIDES</span>
+        {/* LEFT HERO (Guide-focused copy) */}
+        <div className="hidden lg:flex flex-col justify-center rounded-2xl bg-gradient-to-br from-[#081825]/60 to-transparent p-12 border border-white/6 shadow-xl overflow-hidden">
+          <div className="max-w-lg">
+            <span className="inline-block px-3 py-1 rounded-full bg-emerald-900/40 text-emerald-300 text-xs font-medium">NEW HERE? WELCOME GUIDES</span>
 
-    <h1 className="mt-6 text-5xl font-extrabold leading-tight text-white">
-      Login to manage your <span className="text-emerald-400">guide profile</span>
-    </h1>
+            <h1 className="mt-6 text-5xl font-extrabold leading-tight text-white">
+              Login to manage your <span className="text-emerald-400">guide profile</span>
+            </h1>
 
-    <p className="mt-4 text-slate-300">
-      Access bookings, manage availability, and connect with travellers. Keep your profile verified, set your rates, and deliver memorable trips.
-    </p>
+            <p className="mt-4 text-slate-300">
+              Access bookings, manage availability, and connect with travellers. Keep your profile verified, set your rates, and deliver memorable trips.
+            </p>
 
-    <ul className="mt-8 space-y-4 text-slate-300">
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>Manage bookings & schedules in one place</span>
-      </li>
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>Get verified for higher traveller trust</span>
-      </li>
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>Set your daily charge, manage payouts & offers</span>
-      </li>
-    </ul>
+            <ul className="mt-8 space-y-4 text-slate-300">
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>Manage bookings & schedules in one place</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>Get verified for higher traveller trust</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>Set your daily charge, manage payouts & offers</span>
+              </li>
+            </ul>
 
-    <div className="mt-10 text-emerald-300">
-      <Link href="/guide-signup" className="font-medium underline">Create or update your guide profile</Link>
-    </div>
-  </div>
-</div>
+            <div className="mt-10 text-emerald-300">
+              <Link href="/guide-signup" className="font-medium underline">Create or update your guide profile</Link>
+            </div>
+          </div>
+        </div>
 
 
         {/* RIGHT FORM */}

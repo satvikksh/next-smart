@@ -26,6 +26,27 @@ function generateId() {
   return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** Utility: SHA-256 -> hex using Web Crypto; fallback to base64 if not available */
+async function hashStringSHA256(input: string) {
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      const enc = new TextEncoder();
+      const data = enc.encode(input);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (err) {
+    // fallthrough to fallback
+  }
+  // fallback (less secure) — base64 encode
+  try {
+    return btoa(unescape(encodeURIComponent(input)));
+  } catch {
+    return input; // last resort
+  }
+}
+
 export default function GuideSignupPage() {
   const router = useRouter();
   const [form, setForm] = useState<GuideInput>({
@@ -45,6 +66,10 @@ export default function GuideSignupPage() {
     verified: false,
   });
 
+  // new password fields (kept outside GuideInput for clarity)
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   const [langInput, setLangInput] = useState('');
   const [specInput, setSpecInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -59,6 +84,12 @@ export default function GuideSignupPage() {
     if (!/^[0-9]{12}$/.test(form.aadhaar)) e.aadhaar = 'Aadhaar must be 12 digits';
     if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan.toUpperCase())) e.pan = 'PAN format invalid (e.g. ABCDE1234F)';
     if (!Number.isFinite(form.pricePerDay) || form.pricePerDay <= 0) e.pricePerDay = 'Enter a valid daily charge';
+
+    // password validation
+    if (!password) e.password = 'Password is required';
+    else if (password.length < 6) e.password = 'Password must be at least 6 characters';
+    if (password !== confirmPassword) e.confirmPassword = 'Passwords do not match';
+
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -89,14 +120,25 @@ export default function GuideSignupPage() {
     if (!validate()) return;
 
     setSubmitting(true);
+    setErrors({});
     try {
-      const newGuide = {
+      // Hash sensitive values client-side (SHA-256) before sending.
+      // NOTE: server should STILL salt & bcrypt the password; for Aadhaar/PAN server should encrypt or store securely.
+      const passwordHash = await hashStringSHA256(password);
+      const aadhaarHash = await hashStringSHA256(form.aadhaar);
+      const panHash = await hashStringSHA256(form.pan.toUpperCase());
+
+      const payload = {
         id: generateId(),
         name: form.name,
         email: form.email,
         phone: form.phone,
-        aadhaar: form.aadhaar,
-        pan: form.pan.toUpperCase(),
+        // DO NOT send raw aadhaar/pan; send hashes instead
+       aadhaar: form.aadhaar,      // include raw for now if server expects it
+  aadhaarHash,                // hashed copy for server to store/encrypt if you prefer
+  pan: form.pan.toUpperCase(),// include raw for now if server expects it
+  panHash,
+        passwordHash, // server should bcrypt this or derive final hash
         city: form.city || '',
         state: form.state || '',
         country: form.country || 'India',
@@ -109,28 +151,36 @@ export default function GuideSignupPage() {
         verified: false,
       };
 
-      // localStorage-safe save
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          const savedRaw = window.localStorage.getItem('mockGuides');
-          const current = savedRaw ? JSON.parse(savedRaw) : [];
-          current.unshift(newGuide);
-          window.localStorage.setItem('mockGuides', JSON.stringify(current));
+      const res = await fetch('/api/auth/guide-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-          const publicRaw = window.localStorage.getItem('publicGuides') || '[]';
-          const publicList = publicRaw ? JSON.parse(publicRaw) : [];
-          publicList.unshift({ ...newGuide, aadhaar: undefined, pan: undefined });
-          window.localStorage.setItem('publicGuides', JSON.stringify(publicList));
-        }
-      } catch (err) {
-        // ignore storage errors
+      const json = await res.json();
+      if (!res.ok) {
+        // handle validation errors returned from server
+        const message = json?.error || (json?.errors ? json.errors.join('; ') : 'Signup failed');
+        setErrors({ submit: message });
+        setSubmitting(false);
+        return;
       }
 
+      // success: server returns token & sanitized user
+      const { token, user } = json;
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('auth_token', token);
+          window.localStorage.setItem('auth_user', JSON.stringify(user));
+        }
+      } catch (err) { /* ignore storage error */ }
+
       setDone(true);
-      setTimeout(() => router.push('/find-guide'), 900);
+      // redirect to find-guide or dashboard
+      setTimeout(() => router.push('/guide-login'), 900);
     } catch (err) {
       console.error(err);
-      setErrors({ submit: 'Failed to save. Try again.' });
+      setErrors({ submit: 'Signup failed. Try again later.' });
     } finally {
       setSubmitting(false);
     }
@@ -139,89 +189,78 @@ export default function GuideSignupPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#071025] to-[#04101a] text-slate-100 p-6">
       <div className="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-       {/* LEFT: Guide-focused detail panel (matches login left content) */}
-<aside className="hidden lg:flex flex-col justify-center rounded-2xl bg-gradient-to-br from-[#081825]/60 to-transparent p-12 border border-white/6 shadow-xl overflow-hidden">
-  <div className="max-w-lg">
+        {/* LEFT: Guide-focused detail panel (matches login left content) */}
+        <aside className="hidden lg:flex flex-col justify-center rounded-2xl bg-gradient-to-br from-[#081825]/60 to-transparent p-12 border border-white/6 shadow-xl overflow-hidden">
+          <div className="max-w-lg">
+            <span className="inline-block px-3 py-1 rounded-full bg-emerald-900/40 text-emerald-300 text-xs font-medium">
+              NEW GUIDE? START HERE
+            </span>
 
-    {/* Badge */}
-    <span className="inline-block px-3 py-1 rounded-full bg-emerald-900/40 text-emerald-300 text-xs font-medium">
-      NEW GUIDE? START HERE
-    </span>
+            <h1 className="mt-6 text-4xl font-extrabold leading-tight text-white">
+              Build Your <span className="text-emerald-400">Professional Guide Profile</span>
+            </h1>
 
-    {/* Heading */}
-    <h1 className="mt-6 text-4xl font-extrabold leading-tight text-white">
-      Build Your <span className="text-emerald-400">Professional Guide Profile</span>
-    </h1>
+            <p className="mt-4 text-slate-300 leading-relaxed">
+              Become a verified guide and get discovered by thousands of travellers searching for trusted,
+              knowledgeable experts across India. Increase your visibility, manage your schedule, and unlock
+              more earning opportunities — all in one place.
+            </p>
 
-    {/* Sub-description */}
-    <p className="mt-4 text-slate-300 leading-relaxed">
-      Become a verified guide and get discovered by thousands of travellers searching for trusted, 
-      knowledgeable experts across India. Increase your visibility, manage your schedule, and unlock 
-      more earning opportunities — all in one place.
-    </p>
+            <ul className="mt-8 space-y-6 text-slate-300 text-[15px]">
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>
+                  <strong className="text-white">Get Verified & Build Trust</strong><br />
+                  Submit your Aadhaar & PAN for secure identity verification — top-ranked guides receive more bookings.
+                </span>
+              </li>
 
-    {/* Benefits list */}
-    <ul className="mt-8 space-y-6 text-slate-300 text-[15px]">
-      
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>
-          <strong className="text-white">Get Verified & Build Trust</strong><br />
-          Submit your Aadhaar & PAN for secure identity verification — top-ranked guides receive more bookings.
-        </span>
-      </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>
+                  <strong className="text-white">Set Your Own Daily Rates</strong><br />
+                  Decide your charge-per-day, manage seasonal pricing, and offer special experience categories.
+                </span>
+              </li>
 
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>
-          <strong className="text-white">Set Your Own Daily Rates</strong><br />
-          Decide your charge-per-day, manage seasonal pricing, and offer special experience categories.
-        </span>
-      </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>
+                  <strong className="text-white">Full Control Over Your Schedule</strong><br />
+                  Manage availability, block dates, handle traveler requests, and receive booking alerts instantly.
+                </span>
+              </li>
 
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>
-          <strong className="text-white">Full Control Over Your Schedule</strong><br />
-          Manage availability, block dates, handle traveler requests, and receive booking alerts instantly.
-        </span>
-      </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>
+                  <strong className="text-white">Grow Your Reputation</strong><br />
+                  Earn ratings & reviews from travellers and climb the platform rankings to get more visibility.
+                </span>
+              </li>
 
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>
-          <strong className="text-white">Grow Your Reputation</strong><br />
-          Earn ratings & reviews from travellers and climb the platform rankings to get more visibility.
-        </span>
-      </li>
+              <li className="flex items-start gap-3">
+                <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
+                <span>
+                  <strong className="text-white">Showcase Your Expertise</strong><br />
+                  Highlight your languages, specialties (Historical, Wildlife, Adventure, Food Tours, Temple Tours, etc.),
+                  and years of experience — travellers love experts.
+                </span>
+              </li>
+            </ul>
 
-      <li className="flex items-start gap-3">
-        <span className="w-7 h-7 rounded-full bg-emerald-900/40 flex items-center justify-center text-emerald-400">✓</span>
-        <span>
-          <strong className="text-white">Showcase Your Expertise</strong><br />
-          Highlight your languages, specialties (Historical, Wildlife, Adventure, Food Tours, Temple Tours, etc.), 
-          and years of experience — travellers love experts.
-        </span>
-      </li>
-      
-    </ul>
+            <div className="mt-10 text-emerald-300 flex items-center gap-3">
+              <Link href="/guide-login" className="font-medium underline">Already registered? Login here</Link>
+              <span className="text-xs text-slate-400">or</span>
+              <Link href="/" className="text-slate-400 underline">Back to home</Link>
+            </div>
 
-    {/* Login redirect */}
-    <div className="mt-10 text-emerald-300 flex items-center gap-3">
-      <Link href="/guide-login" className="font-medium underline">Already registered? Login here</Link>
-      <span className="text-xs text-slate-400">or</span>
-      <Link href="/" className="text-slate-400 underline">Back to home</Link>
-    </div>
-
-    {/* Privacy note */}
-    <div className="mt-10 text-slate-400 text-sm leading-relaxed">
-      Your data is safe with us. Aadhaar and PAN are used strictly for identity validation and fraud prevention. 
-      Sensitive information is never shown publicly and is stored securely.
-    </div>
-
-  </div>
-</aside>
-
+            <div className="mt-10 text-slate-400 text-sm leading-relaxed">
+              Your data is safe with us. Aadhaar and PAN are used strictly for identity validation and fraud prevention.
+              Sensitive information is never shown publicly and is stored securely.
+            </div>
+          </div>
+        </aside>
 
         {/* RIGHT: Form */}
         <div className="rounded-2xl bg-[#071426]/60 border border-white/6 p-6 shadow-lg">
@@ -251,13 +290,27 @@ export default function GuideSignupPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm">Aadhaar number (12 digits)</label>
-                <input value={form.aadhaar} onChange={(e) => setForm(prev => ({ ...prev, aadhaar: e.target.value.replace(/\D/g,'') }))} maxLength={12} className="w-full mt-2 p-3 rounded-lg bg-transparent border border-white/6" />
+                <input value={form.aadhaar} onChange={(e) => setForm(prev => ({ ...prev, aadhaar: e.target.value.replace(/\\D/g,'') }))} maxLength={12} className="w-full mt-2 p-3 rounded-lg bg-transparent border border-white/6" />
                 {errors.aadhaar && <div className="text-rose-400 text-sm mt-1">{errors.aadhaar}</div>}
               </div>
               <div>
                 <label className="text-sm">PAN number (e.g. ABCDE1234F)</label>
                 <input value={form.pan} onChange={(e) => setForm(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))} maxLength={10} className="w-full mt-2 p-3 rounded-lg bg-transparent border border-white/6" />
                 {errors.pan && <div className="text-rose-400 text-sm mt-1">{errors.pan}</div>}
+              </div>
+            </div>
+
+            {/* PASSWORD FIELDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full mt-2 p-3 rounded-lg bg-transparent border border-white/6" />
+                {errors.password && <div className="text-rose-400 text-sm mt-1">{errors.password}</div>}
+              </div>
+              <div>
+                <label className="text-sm">Confirm Password</label>
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full mt-2 p-3 rounded-lg bg-transparent border border-white/6" />
+                {errors.confirmPassword && <div className="text-rose-400 text-sm mt-1">{errors.confirmPassword}</div>}
               </div>
             </div>
 

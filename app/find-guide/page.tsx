@@ -131,12 +131,14 @@ export default function FindGuidePage() {
 
       // availability filters (optional - basic check if guide has availableFrom/to strings)
     if (filters.availableFrom) {
-  if (g.availableFrom && new Date(g.availableFrom) < new Date(filters.availableFrom)) {
+  if (new Date() < new Date(filters.availableFrom)) {
     return false;
   }
 }
 if (filters.availableTo) {
-  if (g.availableTo && new Date(g.availableTo) > new Date(filters.availableTo)) {
+  if 
+  (new Date() > new Date(filters.availableTo)) 
+    {
     return false;
   }
 }
