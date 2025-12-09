@@ -108,6 +108,12 @@ export default function SignupPage() {
                   </li>
                 </ul>
               </div>
+               <Link
+                        href="/guide-signup"
+                        className="font-medium text-emerald-400 hover:text-emerald-300"
+                      >
+                        Signup as a Guide
+                      </Link>
 
               <div className="mt-8 flex items-center justify-between text-xs text-slate-400">
                 <p>Powered by your next-gen platform</p>

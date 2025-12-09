@@ -17,6 +17,8 @@ export interface Guide {
   availability: {
     from: string; // ISO date string
     to: string;   // ISO date string
+    availableFrom?: string;
+  availableTo?: string;
   };
   description: string;
   verified: boolean;

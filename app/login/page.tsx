@@ -91,7 +91,7 @@ export default function LoginPage() {
               </span>
 
               <h1 className="text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-4">
-                Create your account <span className="text-emerald-400">in seconds</span>
+                Login your account <span className="text-emerald-400">in seconds</span>
               </h1>
 
               <p className="text-slate-300 mb-8">
@@ -119,6 +119,17 @@ export default function LoginPage() {
                   <span>Personalized experience tailored to you</span>
                 </li>
               </ul>
+              <br />
+ <Link
+                  href={`/guide-login?returnUrl=${encodeURIComponent(returnUrl ?? '/')}${action ? `&action=${action}` : ''}`}
+                  className="text-emerald-300 hover:underline font-medium"
+                >
+                  Login as a Guide
+                </Link>
+
+
+
+
 
               <div className="mt-10 text-sm text-slate-400 flex items-center justify-between">
                 <div>Powered by your next-gen platform</div>

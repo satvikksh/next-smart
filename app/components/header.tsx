@@ -111,7 +111,7 @@ export default function Header() {
                 href="/login"
                 className="text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
               >
-                Login
+                Sign In
               </Link>
               <Link
                 href="/register"
@@ -226,7 +226,7 @@ export default function Header() {
                   onClick={() => setOpen(false)}
                   className="flex-1 text-center text-sm font-medium rounded-lg border border-slate-700 px-4 py-1.5 text-slate-200 hover:border-emerald-400 hover:text-emerald-400"
                 >
-                  Login
+                  Sign In
                 </Link>
                 <Link
                   href="/register"
