@@ -33,7 +33,7 @@ export default function BookingModal({
   guide,
   onConfirm,
 }: BookingModalProps) {
-  const { user, isLoggedIn, requireAuth } = useUser();
+  const { user, isLoggedIn } = useUser();
   const router = useRouter();
   const [formData, setFormData] = useState<BookingFormData>({
     name: '',
@@ -60,7 +60,7 @@ export default function BookingModal({
         ...prev,
         name: user.name || '',
         email: user.email || '',
-        phone: user.phone || '',
+        // phone: user.phone || '',
       }));
     }
   }, [user, isOpen]);
@@ -129,7 +129,7 @@ export default function BookingModal({
       guideImage: guide.image,
       guideLocation: guide.location,
       bookingId,
-      userId: user?.id,
+      // userId: user?.id,
       userName: user?.name,
       status: 'confirmed',
       createdAt: new Date().toISOString(),

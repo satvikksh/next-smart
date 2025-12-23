@@ -11,7 +11,7 @@ interface GuideCardProps {
 }
 
 export default function GuideCard({ guide, onBook }: GuideCardProps) {
-  const { isLoggedIn, requireAuth } = useUser();
+  const { isLoggedIn} = useUser();
   const router = useRouter();
   const [showLoginTooltip, setShowLoginTooltip] = useState(false);
 

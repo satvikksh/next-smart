@@ -1,10 +1,9 @@
-// /app/api/auth/login/route.ts
+// app/api/auth/guide-login/route.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import fs from 'fs';
 import crypto from 'crypto';
 
-// Import bcrypt or fallback to dev behavior if not available (as before)
 async function readFileStore(path = '/tmp/guides.json') {
   try {
     if (!fs.existsSync(path)) await fs.promises.writeFile(path, JSON.stringify([]), 'utf8');
@@ -27,10 +26,6 @@ async function connectToMongo() {
   }
   return globalWithMongo._mongoClientPromise as Promise<any>;
 }
-
-// IMPORTANT: adjust this import path if your file is located elsewhere
-import guideSessionLib from '../../../src/lib/guide-session'; // createSession, verifySessionToken...
-// If that path does not match, use relative path like: '../../src/lib/guide-session'
 
 function maskAadhaar(a?: string) {
   if (!a) return undefined;
@@ -56,9 +51,25 @@ function sanitizeForClient(g: any) {
   return copy;
 }
 
+/**
+ * If browser preflight or GET happens, respond gracefully to avoid 405 loops.
+ */
+export async function OPTIONS() {
+  // Allow POST from browsers (CORS preflight not fully handled here — add headers if you need cross-origin)
+  const res = NextResponse.json({ ok: true }, { status: 204 });
+  res.headers.set('Allow', 'POST, OPTIONS');
+  return res;
+}
+
+export async function GET() {
+  const res = NextResponse.json({ ok: false, message: 'This endpoint expects POST' }, { status: 405 });
+  res.headers.set('Allow', 'POST, OPTIONS');
+  return res;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const identifier = (body.identifier || '').toString().trim();
     const password = (body.password || '').toString();
 
@@ -86,62 +97,66 @@ export async function POST(req: NextRequest) {
 
     // verify password using bcrypt (or dev marker)
     let passwordOk = false;
-try {
-  const bcrypt = await import('bcryptjs');
-
-  // 1) direct bcrypt compare with raw password (normal)
-  if (found.passwordHash) {
-    passwordOk = await bcrypt.compare(password, found.passwordHash);
-  }
-
-  // 2) try double-hash scenario: server stored bcrypt(clientSHA256(password))
-  if (!passwordOk) {
     try {
-      const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
-      passwordOk = await bcrypt.compare(sha256, found.passwordHash);
-    } catch (innerErr) {
-      // ignore - keep trying other checks
+      const bcrypt = await import('bcryptjs');
+
+      if (found.passwordHash) {
+        passwordOk = await bcrypt.compare(password, found.passwordHash);
+      }
+
+      if (!passwordOk) {
+        try {
+          const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+          passwordOk = await bcrypt.compare(sha256, found.passwordHash);
+        } catch (innerErr) {
+          // ignore
+        }
+      }
+
+      if (!passwordOk && found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
+        const marker = String(found.passwordHash).slice(4);
+        if (password === marker) passwordOk = true;
+        else {
+          const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+          if (sha256 === marker) passwordOk = true;
+        }
+      }
+    } catch (err) {
+      console.warn('bcrypt unavailable, trying dev marker match');
+      if (found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
+        if (found.passwordHash === `dev:${password}`) passwordOk = true;
+        const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
+        if (found.passwordHash === `dev:${sha256}`) passwordOk = true;
+      }
     }
-  }
 
-  // 3) dev marker fallback: stored values like "dev:plain" (in earlier dev flows)
-  if (!passwordOk && found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
-    const marker = String(found.passwordHash).slice(4);
-    // marker might be raw password used at signup, or client-side sha
-    if (password === marker) passwordOk = true;
-    else {
-      // compare sha too
-      const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
-      if (sha256 === marker) passwordOk = true;
+    if (!passwordOk) {
+      return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
     }
-  }
-} catch (err) {
-  // bcrypt import failed — try dev-marker only
-  console.warn('bcrypt unavailable, trying dev marker match');
-  if (found.passwordHash && String(found.passwordHash).startsWith('dev:')) {
-    if (found.passwordHash === `dev:${password}`) passwordOk = true;
-    const sha256 = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
-    if (found.passwordHash === `dev:${sha256}`) passwordOk = true;
-  }
-}
 
-if (!passwordOk) {
-  return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
-}
-
-    // create session record in DB using guide-session helper
-    // This will return { token, refreshToken, expiresAt, sessionId }
-    let sessionInfo;
+    // LAZY import guide-session helper (avoid top-level import path issues)
+    let guideSessionLib: any = null;
     try {
-      // ensure the lib connects to DB internally (it does)
-      sessionInfo = await guideSessionLib.createSession(found._id || found.id || found._doc?._id, {
-        ttlDays: 7,
-        ip: req.headers.get('x-forwarded-for') || req.ip || '',
-        userAgent: req.headers.get('user-agent') || '',
-      });
+      // adjust relative path if your src is in a different location; this is a safe attempt
+      guideSessionLib = await import('../../../src/lib/guide-session').then(m => m.default ?? m);
+    } catch (err) {
+      console.warn('guide-session lib import failed (will fallback to mock session).', err);
+    }
+
+    let sessionInfo: any;
+    try {
+      if (guideSessionLib && typeof guideSessionLib.createSession === 'function') {
+        sessionInfo = await guideSessionLib.createSession(found._id || found.id || found._doc?._id, {
+          ttlDays: 7,
+          ip: req.headers.get('x-forwarded-for') || '',
+          userAgent: req.headers.get('user-agent') || '',
+        });
+      } else {
+        // fallback simple session token
+        sessionInfo = { token: `mock-${Date.now().toString(36)}`, expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
+      }
     } catch (err) {
       console.error('createSession error', err);
-      // fallback: create a simple token if session creation fails (still allow login but warn)
       sessionInfo = { token: `mock-${Date.now().toString(36)}`, expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000) };
     }
 
@@ -153,22 +168,40 @@ if (!passwordOk) {
     const sameSite = 'Strict';
     const path = '/';
 
-    // set cookie flags (HttpOnly, SameSite=strict, Secure conditional)
+    // Build cookie string
     let cookie = `${cookieName}=${token}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=${sameSite}`;
     if (isSecure) cookie += '; Secure';
 
-    // sanitize user object to avoid returning PII
     const user = sanitizeForClient(found);
 
-    // Return response with cookie header set
-    const res = NextResponse.json({ ok: true, user }, {
-      status: 200,
-      headers: { 'Set-Cookie': cookie }
-    });
+    // Use NextResponse.cookies if available (Next 13+), otherwise set header manually
+    const res = NextResponse.json({ ok: true, user }, { status: 200 });
+    try {
+      // prefer typed cookies API
+      // @ts-ignore - NextResponse.cookies may be present depending on Next version
+      if (res.cookies && typeof res.cookies.set === 'function') {
+        // set secure cookie
+        // @ts-ignore
+        res.cookies.set({
+          name: cookieName,
+          value: token,
+          httpOnly: true,
+          maxAge,
+          path,
+          sameSite: 'strict',
+          secure: isSecure,
+        });
+      } else {
+        res.headers.set('Set-Cookie', cookie);
+      }
+    } catch (err) {
+      // fallback: header
+      res.headers.set('Set-Cookie', cookie);
+    }
 
     return res;
   } catch (err: any) {
-    console.error('POST /api/auth/login error', err);
+    console.error('POST /api/auth/guide-login error', err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }

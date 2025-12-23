@@ -121,7 +121,7 @@ export default function LoginPage() {
               </ul>
               <br />
  <Link
-                  href={`/guide-login?returnUrl=${encodeURIComponent(returnUrl ?? '/')}${action ? `&action=${action}` : ''}`}
+                  href={`/guide/dashboard?returnUrl=${encodeURIComponent(returnUrl ?? '/')}${action ? `&action=${action}` : ''}`}
                   className="text-emerald-300 hover:underline font-medium"
                 >
                   Login as a Guide

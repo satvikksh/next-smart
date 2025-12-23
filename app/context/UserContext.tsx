@@ -21,6 +21,7 @@ type UserContextValue = {
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  isLoading ?: boolean;
 };
 
 const UserContext = createContext<UserContextValue | undefined>(undefined);
@@ -125,6 +126,7 @@ async function logout() {
     login,
     logout,
     refresh,
+ 
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

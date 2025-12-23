@@ -10,14 +10,19 @@ import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
  * - Place as /app/guide-login/page.tsx
  * - Requires Tailwind CSS
  * - Uses localStorage/sessionStorage safely (wrapped with window checks)
- * - Calls POST /api/auth/login to authenticate; supports HttpOnly cookie or token responses
+ * - Calls POST /api/auth/guide-login to authenticate; supports HttpOnly cookie or token responses
+ *
+ * Changes made:
+ * - On mount we check both storage and server session; if either valid -> redirect to guide panel
+ * - After login, we verify session was actually stored (token or server session). If not, show error.
+ * - Better error messages for storage/network failures
  */
 
 export default function GuideLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // after successful login we redirect to returnUrl (default to find-guide)
-  const returnUrl = (searchParams?.get('returnUrl') as string) || '/find-guide';
+  // after successful login we redirect to returnUrl (default to guide dashboard)
+  const returnUrl = (searchParams?.get('returnUrl') as string) || '/guide/dashboard';
 
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -26,17 +31,65 @@ export default function GuideLoginPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    // safe localStorage/sessionStorage read
+  // safe wrapper to read storage
+  function readStoredToken() {
+    if (typeof window === 'undefined') return null;
     try {
-      if (typeof window !== 'undefined') {
-        const t = window.localStorage.getItem('auth_token') || window.sessionStorage.getItem('auth_token');
-        if (t) router.push(returnUrl);
-      }
-    } catch (e) {
-      // ignore
+      return window.localStorage.getItem('auth_token') || window.sessionStorage.getItem('auth_token') || null;
+    } catch (err) {
+      console.warn('storage read failed', err);
+      return null;
     }
-  }, [router, returnUrl]);
+  }
+
+  // Ask the server if a cookie-based session is active.
+  // The endpoint '/api/auth/session' is a suggested name — it should return { ok:true, user } when session is valid.
+  async function verifyServerSession(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    try {
+      const res = await fetch('/api/auth/session', {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return false;
+      const json = await res.json().catch(() => null);
+      return !!(json && (json.ok || json.user));
+    } catch (err) {
+      console.warn('verifyServerSession error', err);
+      return false;
+    }
+  }
+
+  // Combined check: storage token OR server session
+  async function checkAndRedirectIfLoggedIn() {
+    try {
+      const token = readStoredToken();
+      if (token) {
+        // token present locally — redirect
+        router.push(returnUrl + (typeof window !== 'undefined' ? window.location.search : ''));
+        return;
+      }
+
+      // If no local token, check server session (cookie-backed)
+      const serverHas = await verifyServerSession();
+      if (serverHas) {
+        router.push(returnUrl + (typeof window !== 'undefined' ? window.location.search : ''));
+        return;
+      }
+
+      // no session found — stay on login
+    } catch (err) {
+      console.warn('checkAndRedirectIfLoggedIn error', err);
+    }
+  }
+
+  // On mount: check storage + server session and redirect if already logged in
+  useEffect(() => {
+    // safe call
+    checkAndRedirectIfLoggedIn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function passwordStrength(pw: string) {
     if (!pw) return { text: 'Empty', score: 0 };
@@ -49,6 +102,54 @@ export default function GuideLoginPage() {
       text: score <= 1 ? 'Weak' : score === 2 ? 'Fair' : score === 3 ? 'Good' : 'Strong',
       score,
     };
+  }
+
+  // After a (apparently) successful login response, ensure session is actually available:
+  // - either token was stored locally OR server session endpoint confirms cookie set.
+  async function ensureSessionAndRedirect(tokenFromServer?: string, userFromServer?: any) {
+    // try to read storage first (might be token-based)
+    const localToken = readStoredToken();
+    if (localToken) {
+      router.push(returnUrl + (typeof window !== 'undefined' ? window.location.search : ''));
+      return;
+    }
+
+    // If server returned a token and we tried to store it but read failed, show error
+    if (tokenFromServer) {
+      // it means we intended to store token; try one more time to write & read safely
+      try {
+        if (typeof window !== 'undefined') {
+          if (remember && window.localStorage) {
+            window.localStorage.setItem('auth_token', tokenFromServer);
+            if (userFromServer) window.localStorage.setItem('auth_user', JSON.stringify(userFromServer));
+          } else if (window.sessionStorage) {
+            window.sessionStorage.setItem('auth_token', tokenFromServer);
+            if (userFromServer) window.sessionStorage.setItem('auth_user', JSON.stringify(userFromServer));
+          }
+        }
+      } catch (err) {
+        console.warn('secondary token store failed', err);
+      }
+
+      // re-read
+      const tokenNow = readStoredToken();
+      if (tokenNow) {
+        router.push(returnUrl + (typeof window !== 'undefined' ? window.location.search : ''));
+        return;
+      }
+      setMessage('Login succeeded but token could not be stored in your browser. Please allow storage and try again.');
+      return;
+    }
+
+    // If no token returned, server should have set an HttpOnly cookie. Verify server session.
+    const serverHas = await verifyServerSession();
+    if (serverHas) {
+      router.push(returnUrl + (typeof window !== 'undefined' ? window.location.search : ''));
+      return;
+    }
+
+    // Nothing found: show actionable error
+    setMessage('Login appeared successful but no session was stored. Please try again or contact support.');
   }
 
   async function handleAuth(e: React.FormEvent) {
@@ -71,7 +172,11 @@ export default function GuideLoginPage() {
 
       // attempt to parse JSON; server may set cookie and return minimal body
       let json: any = null;
-      try { json = await res.json(); } catch (_) { json = null; }
+      try {
+        json = await res.json();
+      } catch (_) {
+        json = null;
+      }
 
       if (!res.ok) {
         // try to show server-provided message or fallback
@@ -84,7 +189,8 @@ export default function GuideLoginPage() {
       // success path: server may return either { ok:true, token, user } or { ok:true, user } and set cookie
       if (json && json.ok) {
         const { token, user } = json;
-        // if server returned a token, persist it; otherwise assume cookie auth is set
+
+        // store token/user if server provided token
         try {
           if (typeof window !== 'undefined') {
             if (token) {
@@ -105,21 +211,21 @@ export default function GuideLoginPage() {
           console.warn('storage error', err);
         }
 
-        // redirect preserving query (e.g., book action)
-        const params = typeof window !== 'undefined' ? window.location.search : '';
-        router.push(returnUrl + params);
+        // IMPORTANT: verify session actually exists (token OR cookie)
+        await ensureSessionAndRedirect(json.token, json.user);
         return;
       }
 
       // fallback success when no json but 2xx response (cookie-only flows)
       if (!json && res.ok) {
-        try {
-          if (typeof window !== 'undefined') {
-            // nothing to store if server manages sessions via HttpOnly cookie
-          }
-        } catch (err) {}
-        const params = typeof window !== 'undefined' ? window.location.search : '';
-        router.push(returnUrl + params);
+        // Try verifying server session (HttpOnly cookie flows)
+        const serverHas = await verifyServerSession();
+        if (serverHas) {
+          const params = typeof window !== 'undefined' ? window.location.search : '';
+          router.push(returnUrl + params);
+          return;
+        }
+        setMessage('Login succeeded but we could not confirm a session was established. Please try again.');
         return;
       }
 
@@ -171,7 +277,6 @@ export default function GuideLoginPage() {
             </div>
           </div>
         </div>
-
 
         {/* RIGHT FORM */}
         <div className="rounded-2xl bg-[#07121a]/80 p-8 border border-white/6 shadow-2xl">
