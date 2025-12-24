@@ -141,7 +141,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="group bg-slate-900/70 border border-slate-800 hover:border-amber-400/70 rounded-2xl p-6 transition-transform hover:-translate-y-1 hover:shadow-lg hover:shadow-amber-500/10">
+          <div className="group bg-slate-900/70 border border-slate-700 hover:border-amber-400/70 rounded-2xl p-6 transition-transform hover:-translate-y-1 hover:shadow-lg hover:shadow-amber-500/10">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-slate-50">
                 Digital Tourist ID
