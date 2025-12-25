@@ -1,133 +1,177 @@
 // app/context/UserContext.tsx
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
-type User = {
-  _id?: string;
+/* ----------------------------- Types ----------------------------- */
+
+export type User = {
+  _id: string;
   name?: string;
   username?: string;
   email?: string;
   role?: string;
-  // add other public user fields you expect
 } | null;
 
-type LoginResult = { success: true } | { success: false; message?: string };
+export type LoginResult =
+  | { success: true }
+  | { success: false; message: string };
 
-type UserContextValue = {
+export type UserContextValue = {
   user: User;
   loading: boolean;
   isLoggedIn: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  isLoading ?: boolean;
 };
+
+/* ---------------------------- Context ---------------------------- */
 
 const UserContext = createContext<UserContextValue | undefined>(undefined);
 
 export function useUser(): UserContextValue {
   const ctx = useContext(UserContext);
-  if (!ctx) throw new Error('useUser must be used within a UserProvider');
+  if (!ctx) {
+    throw new Error('useUser must be used within a UserProvider');
+  }
   return ctx;
 }
 
+/* ---------------------------- Provider --------------------------- */
+
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
 
-  async function refresh() {
+  // Used to cancel outdated requests (important on fast route changes)
+  const abortRef = useRef<AbortController | null>(null);
+
+  /* ---------------------------- Helpers --------------------------- */
+
+  const apiFetch = useCallback(async (input: RequestInfo, init?: RequestInit) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    return fetch(input, {
+      ...init,
+      credentials: 'include',
+      signal: controller.signal,
+    });
+  }, []);
+
+  /* ---------------------------- Refresh --------------------------- */
+
+  const refresh = useCallback(async () => {
     setLoading(true);
+
     try {
-      const res = await fetch('/api/auth/me', { method: 'GET', credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user ?? null);
-      } else {
+      const res = await apiFetch('/api/auth/me', { method: 'GET' });
+
+      if (!res.ok) {
+        setUser(null);
+        return;
+      }
+
+      const data = await res.json();
+      setUser(data?.user ?? null);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        console.error('[auth] refresh failed', err);
         setUser(null);
       }
-    } catch (err) {
-      console.error('refresh user failed', err);
-      setUser(null);
     } finally {
       setLoading(false);
     }
-  }
+  }, [apiFetch]);
 
-  useEffect(() => {
-    // run once on mount
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  /* ----------------------------- Login ---------------------------- */
+
+  const login = useCallback(
+    async (email: string, password: string): Promise<LoginResult> => {
+      try {
+        const base =
+          typeof window !== 'undefined'
+            ? process.env.NEXT_PUBLIC_API_URL ?? ''
+            : '';
+
+        const url = base
+          ? `${base.replace(/\/$/, '')}/api/auth/login`
+          : '/api/auth/login';
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          return {
+            success: false,
+            message: data?.message || data?.error || 'Login failed',
+          };
+        }
+
+        await refresh();
+        return { success: true };
+      } catch (err: any) {
+        console.error('[auth] login error', err);
+        return {
+          success: false,
+          message: err?.message || 'Network error',
+        };
+      }
+    },
+    [refresh]
+  );
+
+  /* ----------------------------- Logout --------------------------- */
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.error('[auth] logout failed', err);
+    } finally {
+      setUser(null);
+    }
   }, []);
 
-async function login(
-  email: string,
-  password: string
-): Promise<{ success: boolean; message?: string }> {
-  try {
-    // Prefer NEXT_PUBLIC_API_URL when set (production), else use relative path in dev
-    const basePublic = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? '') : '';
-    const url = basePublic
-      ? `${basePublic.replace(/\/$/, '')}/api/auth/login`
-      : '/api/auth/login';
+  /* ----------------------------- Mount ---------------------------- */
 
-    // debug: print URL to console so you can confirm what client is requesting
-    console.info('[login] POST ->', url);
+  useEffect(() => {
+    refresh();
+    return () => abortRef.current?.abort();
+  }, [refresh]);
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, password }),
-    });
+  /* ----------------------------- Value ---------------------------- */
 
-    // debug: log status and url
-    console.info('[login] response status', res.status, res.statusText);
-
-    // try to parse JSON safely
-    const data = await res.json().catch(() => ({} as any));
-
-    if (res.ok) {
-      await refresh(); // refresh user data
-      return { success: true };
-    }
-
-    return { success: false, message: data?.message || data?.error || `HTTP ${res.status}` };
-  } catch (err: any) {
-    console.error('[login] network/error', err);
-    return { success: false, message: err?.message || 'Network error' };
-  }
-}
-
-
-// in app/context/UserContext.tsx or similar
-async function logout() {
-  try {
-    // POST to logout route
-    await fetch("/api/auth/logout", {
-      method: "POST",
-      credentials: "include",
-    });
-
-    // refresh user state (this will call /api/auth/me and get null)
-    await refresh();
-
-    // optional: redirect to home or login
-    // router.push('/');
-  } catch (err) {
-    console.error("logout failed", err);
-  }
-}
-
-  const value: UserContextValue = {
-    user,
-    loading,
-    isLoggedIn: !!user,
-    login,
-    logout,
-    refresh,
- 
-  };
+  const value = useMemo<UserContextValue>(
+    () => ({
+      user,
+      loading,
+      isLoggedIn: Boolean(user),
+      login,
+      logout,
+      refresh,
+    }),
+    [user, loading, login, logout, refresh]
+  );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
