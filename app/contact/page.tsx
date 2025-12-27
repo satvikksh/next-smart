@@ -219,9 +219,9 @@ export default function ContactPage() {
                 </div>
 
                 <div className="rounded-xl border border-white/10 p-4 text-sm">
-                  <p className="text-slate-300">Office hours</p>
-                  <p className="mt-2 text-slate-400">Mon–Fri: 9:30 AM – 6:30 PM</p>
-                  <p className="text-slate-400">Sat: 10:00 AM – 2:00 PM</p>
+                  <p className="text-slate-400">Office hours</p>
+                  <p className="mt-2 text-slate-500">Mon–Fri: 9:30 AM – 6:30 PM</p>
+                  <p className="text-slate-500">Sat: 10:00 AM – 2:00 PM</p>
                 </div>
               </div>
             </div>
