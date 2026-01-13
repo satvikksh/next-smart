@@ -256,7 +256,7 @@ Thank you for booking with GuideConnect!
   const renderFormStep = () => (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* User Status Badge */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4">
+      <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
             {user?.name?.charAt(0) || '?'}
@@ -299,7 +299,7 @@ Thank you for booking with GuideConnect!
             </div>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-blue-600">${guide.pricePerDay}</div>
+            <div className="text-2xl font-bold text-blue-590">${guide.pricePerDay}</div>
             <div className="text-gray-500 text-sm">per day</div>
           </div>
         </div>
@@ -334,7 +334,7 @@ Thank you for booking with GuideConnect!
   // Rest of the component remains the same...
   // Only show confirmation/success steps if logged in
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center">
